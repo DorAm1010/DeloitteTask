@@ -1,0 +1,34 @@
+"""Terminal chat:  python -m airport_agent.cli  (add --trace to print tool calls)."""
+from __future__ import annotations
+
+import sys
+
+from .agent import AirportAgent
+
+
+def main() -> None:
+    trace = "--trace" in sys.argv
+    agent = AirportAgent()
+    print("Airport Investment Agent - ask a question, 'reset' to start over, 'quit' to exit.\n")
+    while True:
+        try:
+            question = input("you> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if question.lower() in {"quit", "exit"}:
+            break
+        if question.lower() == "reset":
+            agent.reset()
+            print("(conversation cleared)\n")
+            continue
+        if not question:
+            continue
+        reply = agent.ask(question)
+        if trace:
+            for call in reply.tool_calls:
+                print(f"  [tool] {call.name}({call.input}){' ERROR' if call.is_error else ''}")
+        print(f"\nagent> {reply.text}\n")
+
+
+if __name__ == "__main__":
+    main()
