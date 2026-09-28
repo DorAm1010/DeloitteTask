@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Airport Investment Agent</title>
+<script src="/vendor/marked.min.js"></script>
+<script src="/vendor/purify.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5f6b7a; --border: #dde2e8;
+    --accent: #0b6e4f; --accent-soft: #e3f2ec; --user: #1f4e79; --user-text: #ffffff; --code: #f0f2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161c; --panel: #1b2129; --text: #e6e9ee; --muted: #9aa5b3; --border: #2c3440;
+      --accent: #3fbf8f; --accent-soft: #1e3a30; --user: #2b5f8f; --user-text: #ffffff; --code: #242b35;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; height: 100vh; height: 100dvh; display: flex; flex-direction: column; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  header { padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--panel); }
+  header h1 { margin: 0; font-size: 18px; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  main { flex: 1; min-height: 0; width: 100%; max-width: 900px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; }
+  #chat { flex: 1; overflow-y: auto; padding-bottom: 12px; }
+  .msg { margin: 10px 0; padding: 12px 14px; border-radius: 10px; max-width: 100%; overflow-x: auto; }
+  .user { background: var(--user); color: var(--user-text); margin-left: 15%; }
+  .bot { background: var(--panel); border: 1px solid var(--border); }
+  .bot table { border-collapse: collapse; margin: 8px 0; font-size: 14px; }
+  .bot th, .bot td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+  .bot code, .bot pre { background: var(--code); border-radius: 4px; }
+  .bot pre { padding: 8px; overflow-x: auto; font-size: 12px; }
+  details.trace { margin-top: 10px; font-size: 13px; color: var(--muted); }
+  details.trace summary { cursor: pointer; }
+  .tool { border-left: 3px solid var(--accent); padding: 4px 10px; margin: 8px 0; }
+  .tool.err { border-color: #c0392b; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+  .chip { border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 16px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+  .chip:hover { background: var(--accent-soft); }
+  form { display: flex; gap: 8px; }
+  textarea { flex: 1; resize: none; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font: inherit; min-height: 44px; }
+  button { border: 0; border-radius: 8px; padding: 0 14px; font: inherit; cursor: pointer; background: var(--accent); color: #fff; }
+  button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
+  button.recording { background: #c0392b; }
+  .toolbar { display: flex; gap: 12px; align-items: center; margin-top: 8px; font-size: 13px; color: var(--muted); }
+  .thinking { color: var(--muted); font-style: italic; }
+  @media (max-width: 600px) { .user { margin-left: 0; } main { padding: 12px 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Airport Investment Intelligence Agent</h1>
+  <p id="vintage">Loading data status...</p>
+</header>
+<main>
+  <div id="chat">
+    <div class="msg bot">Ask me about US airport demand, capacity and congestion. I rank airports with a
+      deterministic scoring model on public BTS/FAA data and explain how I got each number.
+      Open "How I got this" under any answer to see the tool calls.</div>
+    <div class="chips" id="chips"></div>
+  </div>
+  <form id="form">
+    <textarea id="input" placeholder="Ask a question... (Enter to send, Shift+Enter for a new line)"></textarea>
+    <button type="button" id="mic" class="secondary" title="Speak your question">🎤</button>
+    <button type="submit" id="send">Send</button>
+  </form>
+  <div class="toolbar">
+    <label><input type="checkbox" id="speak"> Read answers aloud</label>
+    <button type="button" id="reset" class="secondary" style="padding:4px 10px">New conversation</button>
+  </div>
+</main>
+<script>
+const EXAMPLES = [
+  "Which airports in New England are strong candidates for terminal expansion?",
+  "Compare LA and Santa Ana airport congestion levels.",
+  "What is the percentage of long haul flights out of Anchorage airport?",
+  "What is the unmet flight demand in SFO airport and why?",
+];
+const chat = document.getElementById("chat");
+const input = document.getElementById("input");
+let sessionId = null;
+
+function esc(s) { return s.replace(/[&<>]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c])); }
+function scrollDown() { chat.scrollTop = chat.scrollHeight; }
+
+function addMessage(cls, html) {
+  const div = document.createElement("div");
+  div.className = "msg " + cls;
+  div.innerHTML = html;
+  chat.appendChild(div);
+  scrollDown();
+  return div;
+}
+
+function renderTrace(calls) {
+  if (!calls.length) return "";
+  const items = calls.map(c => `<div class="tool ${c.is_error ? "err" : ""}">
+      <b>${esc(c.name)}</b> <code>${esc(JSON.stringify(c.input))}</code>
+      <pre>${esc(c.output_preview)}</pre></div>`).join("");
+  return `<details class="trace"><summary>How I got this (${calls.length} tool call${calls.length > 1 ? "s" : ""})</summary>${items}</details>`;
+}
+
+function speak(text) {
+  if (!document.getElementById("speak").checked || !("speechSynthesis" in window)) return;
+  const plain = text.replace(/[#*_`|>-]/g, " ").replace(/\s+/g, " ");
+  speechSynthesis.cancel();
+  speechSynthesis.speak(new SpeechSynthesisUtterance(plain));
+}
+
+async function send(text) {
+  if (!text.trim()) return;
+  addMessage("user", esc(text));
+  input.value = "";
+  const pending = addMessage("bot thinking", "Analyzing... (querying data and scoring airports)");
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({message: text, session_id: sessionId}),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+    const data = await res.json();
+    sessionId = data.session_id;
+    pending.className = "msg bot";
+    pending.innerHTML = DOMPurify.sanitize(marked.parse(data.answer)) + renderTrace(data.tool_calls);
+    speak(data.answer);
+  } catch (err) {
+    pending.className = "msg bot";
+    pending.textContent = "Error: " + err.message;
+  }
+  scrollDown();
+}
+
+document.getElementById("form").addEventListener("submit", e => { e.preventDefault(); send(input.value); });
+input.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input.value); }
+});
+document.getElementById("reset").addEventListener("click", async () => {
+  if (sessionId) await fetch("/api/reset", {method: "POST", headers: {"Content-Type": "application/json"},
+                                             body: JSON.stringify({message: "", session_id: sessionId})});
+  sessionId = null;
+  addMessage("bot", "<i>Started a new conversation.</i>");
+});
+
+const chips = document.getElementById("chips");
+EXAMPLES.forEach(q => {
+  const b = document.createElement("button");
+  b.className = "chip"; b.type = "button"; b.textContent = q;
+  b.onclick = () => send(q);
+  chips.appendChild(b);
+});
+
+// Voice input: browser Web Speech API (Chrome/Edge/Safari). No server-side audio needed.
+const mic = document.getElementById("mic");
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!Recognition) {
+  mic.disabled = true; mic.title = "Voice input not supported in this browser";
+} else {
+  const rec = new Recognition();
+  rec.lang = "en-US"; rec.interimResults = true;
+  rec.onresult = e => { input.value = Array.from(e.results).map(r => r[0].transcript).join(""); };
+  rec.onend = () => { mic.classList.remove("recording"); if (input.value.trim()) send(input.value); };
+  mic.onclick = () => { mic.classList.add("recording"); rec.start(); };
+}
+
+fetch("/api/status").then(r => r.json()).then(d => {
+  const v = d.data_vintage;
+  document.getElementById("vintage").textContent =
+    `Data: BTS T-100 ${v.t100_airport_totals} · international routes ${v.t100_international_routes || "n/a"} · ` +
+    `on-time ${v.bts_on_time || "n/a"} · FAA delays live`;
+});
+</script>
+</body>
+</html>
