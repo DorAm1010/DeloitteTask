@@ -1,0 +1,44 @@
+{
+  "_about": "Hand-curated qualitative context gathered by the analyst on 2026-09-28 from public news and official sources. Used only to EXPLAIN results, never as an input to scores. Re-verify before relying on it.",
+  "SFO": {
+    "notes": [
+      "SFO's two pairs of parallel runways are only ~750 ft apart, far below the ~4,300 ft normally needed for independent parallel approaches, so arrival capacity depends on special procedures and weather.",
+      "In spring 2026 the FAA stopped side-by-side visual approaches to the closely spaced runways (with concurrent runway repaving), cutting the arrival rate from ~54 to ~36 per hour even in clear weather.",
+      "From 12 Aug 2026 staggered parallel approaches raised the cap to ~40 arrivals/hour, with ~42 planned by end of August - still well below the old ~54.",
+      "Marine-layer fog / low ceilings regularly trigger FAA Ground Delay Programs that push the rate back down to ~36."
+    ],
+    "sources": [
+      "https://ops.group/blog/san-francisco-side-by-side-parallel-visual-approaches-banned/",
+      "https://avweb.com/aviation-news/faa-restricts-sfo-landings/",
+      "https://www.nbcbayarea.com/news/local/faa-sfo-restrictions-more-landings/4127278/",
+      "https://www.paddleyourownkanoo.com/2026/08/13/san-francisco-international-airport-allowed-to-increase-flight-arrivals-after-faa-parallel-landing-ban/"
+    ]
+  },
+  "SNA": {
+    "notes": [
+      "John Wayne Airport operates under the 1985 Settlement Agreement (amended 2014, in force through 2030) that caps annual passengers: 11.8M from 2021, potentially rising to 12.5M from 2026.",
+      "A noise curfew bans commercial departures 10pm-7am (8am Sundays) and arrivals 11pm-7am, in place through 2035.",
+      "Congestion at SNA is therefore largely regulatory (a legal cap) rather than physical; terminal expansion cannot add passengers beyond the cap."
+    ],
+    "sources": [
+      "https://www.ocair.com/about/administration/settlement-agreement/settlement-agreement-faqs/",
+      "https://www.ocweekly.com/john-wayne-airport-curfews-remain-through-2035-but-flight-increases-will-come-someday-6455743/"
+    ]
+  },
+  "ANC": {
+    "notes": [
+      "Anchorage is primarily a cargo gateway: ranked #1 US airport for air cargo and #3 worldwide in 2025 rankings, serving transpacific freighters that refuel/transload between Asia and North America.",
+      "Most long-haul departures are all-cargo flights to Asia; passenger service is mostly within Alaska and to the lower 48."
+    ],
+    "sources": [
+      "https://www.alaskasnewssource.com/2026/04/19/ted-stevens-international-now-ranks-1st-us-cargo-nears-top-worldwide-list/",
+      "https://dot.alaska.gov/aias/cargo.shtml"
+    ]
+  },
+  "LAX": {
+    "notes": [
+      "'LA' is ambiguous: the Los Angeles region is served by LAX plus Burbank (BUR), Long Beach (LGB), Ontario (ONT) and Santa Ana / John Wayne (SNA)."
+    ],
+    "sources": []
+  }
+}
