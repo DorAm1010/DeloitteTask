@@ -1,13 +1,16 @@
 """Central configuration: paths, model settings and analyst assumptions.
 
-Everything an analyst might want to tune (thresholds, regions, weights) lives
-here so it is visible in one place and never hidden inside a prompt.
+Three sources, each for a different kind of setting:
+  * .env                 secrets and model settings (API key, model, effort)
+  * config/scoring.yaml  analyst assumptions and scoring weights (editable without code)
+  * this file            paths, data-source URLs and pricing (engineering constants)
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
+import yaml
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -17,6 +20,9 @@ DATA_DIR = ROOT / "data"
 RAW_DIR = DATA_DIR / "raw"            # large downloads, git-ignored
 PROCESSED_DIR = DATA_DIR / "processed"  # small aggregated tables, committed
 REFERENCE_DIR = DATA_DIR / "reference"  # hand-curated context with sources
+PROMPTS_DIR = ROOT / "prompts"
+SCORING_CONFIG_PATH = Path(os.getenv("SCORING_CONFIG", ROOT / "config" / "scoring.yaml"))
+LOG_DIR = Path(os.getenv("AGENT_LOG_DIR", ROOT / "logs"))  # JSONL telemetry, git-ignored
 
 # --- LLM settings -----------------------------------------------------------
 MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-5")
@@ -25,6 +31,17 @@ MAX_AGENT_STEPS = int(os.getenv("AGENT_MAX_STEPS", "10"))
 # Server-side refusal fallback (beta). If the model declines a request, the API
 # re-runs it on Anthropic's recommended fallback model instead of failing.
 USE_REFUSAL_FALLBACK = os.getenv("AGENT_REFUSAL_FALLBACK", "1") == "1"
+SYSTEM_PROMPT = (PROMPTS_DIR / "system.md").read_text().strip()
+
+# USD per million tokens (input, output), used for the cost-per-answer estimate.
+# Cache writes cost 1.25x input and cache reads 0.1x input.
+MODEL_PRICING = {
+    "claude-opus-5": (5.0, 25.0),
+    "claude-opus-5-5": (4.0, 20.0),
+    "claude-sonnet-5": (2.0, 10.0),
+    "claude-haiku-4-5": (1.0, 5.0),
+    "claude-fable-5-1": (10.0, 50.0),
+}
 
 # --- Public data sources ----------------------------------------------------
 BTS_SOCRATA = "https://data.bts.gov/resource"
@@ -37,33 +54,12 @@ OURAIRPORTS_URL = "https://davidmegginson.github.io/ourairports-data/airports.cs
 FAA_NAS_STATUS_URL = "https://nasstatus.faa.gov/api/airport-status-information"
 HTTP_TIMEOUT = 60
 
-# --- Analyst assumptions (documented in DESIGN.md) ---------------------------
-# Long haul: >= 3,000 statute miles (roughly 6+ hours block time). There is no
-# single industry standard; this is exposed as a tool parameter.
-LONG_HAUL_MILES = 3000
-DISTANCE_BANDS = [(0, 500, "short (<500 mi)"),
-                  (500, 1500, "medium (500-1,499 mi)"),
-                  (1500, 3000, "long domestic (1,500-2,999 mi)"),
-                  (3000, 100_000, "long haul (3,000+ mi)")]
-# An international route averaging fewer passengers than this per departure is
-# treated as cargo-dominated (the T-100 international feed has no service class).
-PASSENGER_ROUTE_MIN_PAX_PER_DEP = 20
-# Load factor considered "comfortably served". Above it, extra demand tends to
-# spill (passengers who wanted a seat but could not get one at a sane fare).
-TARGET_LOAD_FACTOR = 0.80
-# Reference universe for percentile scoring: airports with at least this many
-# enplaned passengers in the last 12 months (roughly FAA small hub and up).
-SCORING_UNIVERSE_MIN_PAX = 500_000
-
-REGIONS: dict[str, list[str]] = {
-    "new england": ["CT", "ME", "MA", "NH", "RI", "VT"],
-    "mid-atlantic": ["NJ", "NY", "PA"],
-    "south atlantic": ["DE", "DC", "FL", "GA", "MD", "NC", "SC", "VA", "WV"],
-    "east north central": ["IL", "IN", "MI", "OH", "WI"],
-    "west north central": ["IA", "KS", "MN", "MO", "NE", "ND", "SD"],
-    "east south central": ["AL", "KY", "MS", "TN"],
-    "west south central": ["AR", "LA", "OK", "TX"],
-    "mountain": ["AZ", "CO", "ID", "MT", "NV", "NM", "UT", "WY"],
-    "pacific": ["AK", "CA", "HI", "OR", "WA"],
-    "west coast": ["CA", "OR", "WA"],
-}
+# --- Analyst assumptions (config/scoring.yaml, documented in DESIGN.md) ------
+SCORING_CONFIG: dict = yaml.safe_load(SCORING_CONFIG_PATH.read_text())
+_assumptions = SCORING_CONFIG["assumptions"]
+LONG_HAUL_MILES: int = _assumptions["long_haul_miles"]
+DISTANCE_BANDS: list[tuple[float, float, str]] = [tuple(b) for b in _assumptions["distance_bands"]]
+PASSENGER_ROUTE_MIN_PAX_PER_DEP: float = _assumptions["passenger_route_min_pax_per_dep"]
+TARGET_LOAD_FACTOR: float = _assumptions["target_load_factor"]
+SCORING_UNIVERSE_MIN_PAX: int = _assumptions["scoring_universe_min_pax"]
+REGIONS: dict[str, list[str]] = SCORING_CONFIG["regions"]

@@ -62,6 +62,7 @@ def chat(req: ChatRequest) -> dict:  # sync def -> FastAPI runs it in a worker t
         "session_id": session_id,
         "answer": reply.text,
         "stop_reason": reply.stop_reason,
+        "usage": {**reply.usage.to_dict(), "cost_usd": reply.cost_usd, "latency_s": reply.latency_s},
         "tool_calls": [{"name": c.name, "input": c.input, "is_error": c.is_error,
                         "output_preview": _preview(c.output)} for c in reply.tool_calls],
     }

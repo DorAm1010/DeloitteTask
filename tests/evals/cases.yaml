@@ -1,0 +1,95 @@
+# Agent eval cases. Each case is one conversation; the LAST answer is graded,
+# tool calls from every turn count. See tests/evals/grading.py for the checks.
+#
+# expect_tools:  "name", "a|b" (any of), or "name(arg=value)"
+# forbid_tools:  tools that must not be called
+# must_mention:  case-insensitive regexes the answer must match
+# require_caveats (default true), min_grounding (default 0.9; null = skip)
+
+# --- The four questions from the brief ---------------------------------------
+- id: brief_new_england
+  turns: ["Which airports in New England are strong candidates for terminal expansion?"]
+  expect_tools: ["score_airports(profile=terminal_expansion)"]
+  must_mention: ["BOS|Boston", "PWM|Portland"]
+
+- id: brief_la_vs_santa_ana
+  turns: ["Compare LA and Santa Ana airport congestion levels."]
+  expect_tools: ["score_airports(profile=congestion)"]
+  must_mention: ["LAX", "SNA|Santa Ana|John Wayne"]
+
+- id: brief_anchorage_long_haul
+  turns: ["What is the percentage of long haul flights out of Anchorage airport?"]
+  expect_tools: ["get_route_mix(iata=ANC)"]
+  must_mention: ["cargo"]
+
+- id: brief_sfo_unmet_demand
+  turns: ["What is the unmet flight demand in SFO airport and why?"]
+  expect_tools: ["estimate_unmet_demand(iata=SFO)"]
+  must_mention: ["runway|airside|arrival"]
+
+# --- Follow-ups (conversation memory) ------------------------------------------
+- id: followup_reweight
+  turns:
+    - "Which airports in New England are strong candidates for terminal expansion?"
+    - "Re-rank them with scale weighted twice as much."
+  expect_tools: ["score_airports(profile=terminal_expansion)"]
+  must_mention: ["BOS|Boston"]
+
+- id: followup_compare
+  turns:
+    - "What is the unmet flight demand in SFO airport and why?"
+    - "How does Boston compare on the same measure?"
+  expect_tools: ["estimate_unmet_demand(iata=BOS)|get_airport_profile(iata=BOS)"]
+  must_mention: ["BOS|Boston"]
+
+# --- Variations -----------------------------------------------------------------
+- id: methodology
+  turns: ["How does your scoring work, and what does it not take into account?"]
+  expect_tools: ["get_methodology"]
+  must_mention: ["percentile", "cost|financ"]
+  require_caveats: false
+
+- id: live_status
+  turns: ["Are there any FAA delays at SFO right now?"]
+  expect_tools: ["get_live_faa_status|estimate_unmet_demand"]
+  must_mention: ["SFO"]
+  require_caveats: false
+
+- id: profile_denver
+  turns: ["Give me a demand and congestion profile of Denver airport."]
+  expect_tools: ["get_airport_profile(iata=DEN)"]
+  must_mention: ["DEN|Denver"]
+
+- id: custom_long_haul_threshold
+  turns: ["What share of departures from Honolulu are long haul, if we define long haul as 2,500 miles or more?"]
+  expect_tools: ["get_route_mix(long_haul_miles=2500)"]
+  must_mention: ["2,500|2500"]
+
+- id: region_congestion
+  turns: ["Which airports in the Mountain region are the most congested?"]
+  expect_tools: ["score_airports(profile=congestion)"]
+  must_mention: ["DEN|Denver|PHX|Phoenix|LAS|Las Vegas|SLC|Salt Lake"]
+
+- id: ambiguous_la
+  turns: ["How congested is the LA airport?"]
+  expect_tools: ["score_airports(profile=congestion)|get_airport_profile(iata=LAX)"]
+  must_mention: ["LAX"]
+
+# --- Scope and error handling ---------------------------------------------------
+- id: out_of_scope_non_us
+  turns: ["Rank London Heathrow and Paris CDG for terminal expansion."]
+  must_mention: ["US|United States|U\\.S\\."]
+  require_caveats: false
+  min_grounding: null
+
+- id: no_financial_advice
+  turns: ["Should I buy bonds issued by Boston Logan airport?"]
+  must_mention: ["advice|recommend"]
+  require_caveats: false
+  min_grounding: null
+
+- id: unknown_airport
+  turns: ["What is the load factor at airport XYZ?"]
+  must_mention: ["XYZ"]
+  require_caveats: false
+  min_grounding: null

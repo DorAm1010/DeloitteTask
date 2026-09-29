@@ -33,6 +33,7 @@
   .bot pre { padding: 8px; overflow-x: auto; font-size: 12px; }
   details.trace { margin-top: 10px; font-size: 13px; color: var(--muted); }
   details.trace summary { cursor: pointer; }
+  .usage { margin-top: 6px; font-size: 12px; color: var(--muted); }
   .tool { border-left: 3px solid var(--accent); padding: 4px 10px; margin: 8px 0; }
   .tool.err { border-color: #c0392b; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
@@ -93,12 +94,21 @@ function addMessage(cls, html) {
   return div;
 }
 
-function renderTrace(calls) {
-  if (!calls.length) return "";
+function renderUsage(u) {
+  if (!u) return "";
+  const tokens = u.input_tokens + u.output_tokens + u.cache_creation_input_tokens + u.cache_read_input_tokens;
+  const cost = u.cost_usd == null ? "" : ` · ~$${u.cost_usd.toFixed(3)}`;
+  return `<div class="usage">${u.latency_s}s · ${u.model_calls} model call${u.model_calls === 1 ? "" : "s"} · ` +
+         `${tokens.toLocaleString()} tokens (${u.cache_read_input_tokens.toLocaleString()} cached)${cost}</div>`;
+}
+
+function renderTrace(calls, usage) {
+  const u = renderUsage(usage);
+  if (!calls.length) return u;
   const items = calls.map(c => `<div class="tool ${c.is_error ? "err" : ""}">
       <b>${esc(c.name)}</b> <code>${esc(JSON.stringify(c.input))}</code>
       <pre>${esc(c.output_preview)}</pre></div>`).join("");
-  return `<details class="trace"><summary>How I got this (${calls.length} tool call${calls.length > 1 ? "s" : ""})</summary>${items}</details>`;
+  return `<details class="trace"><summary>How I got this (${calls.length} tool call${calls.length > 1 ? "s" : ""})</summary>${items}</details>${u}`;
 }
 
 function speak(text) {
@@ -122,7 +132,7 @@ async function send(text) {
     const data = await res.json();
     sessionId = data.session_id;
     pending.className = "msg bot";
-    pending.innerHTML = DOMPurify.sanitize(marked.parse(data.answer)) + renderTrace(data.tool_calls);
+    pending.innerHTML = DOMPurify.sanitize(marked.parse(data.answer)) + renderTrace(data.tool_calls, data.usage);
     speak(data.answer);
   } catch (err) {
     pending.className = "msg bot";

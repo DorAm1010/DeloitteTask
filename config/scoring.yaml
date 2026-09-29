@@ -1,0 +1,109 @@
+# Analyst assumptions and scoring model definition.
+#
+# Everything here is a judgement call an analyst may want to change, so it lives
+# in data rather than code. Edit, restart the app, and the scores, tool outputs
+# and methodology descriptions all follow. Weights inside a profile are
+# renormalised to sum to 1, so they only need to be right relative to each other.
+# Secrets and model settings stay in .env, never here.
+
+assumptions:
+  # Long haul threshold in statute miles (~6h+ block time). No single industry standard.
+  long_haul_miles: 3000
+  distance_bands:            # [lower, upper, label]; used for the route-mix breakdown
+    - [0, 500, "short (<500 mi)"]
+    - [500, 1500, "medium (500-1,499 mi)"]
+    - [1500, 3000, "long domestic (1,500-2,999 mi)"]
+    - [3000, 100000, "long haul (3,000+ mi)"]
+  # International routes averaging fewer passengers per departure are cargo-dominated
+  # (the T-100 international feed has no service class).
+  passenger_route_min_pax_per_dep: 20
+  # Load factor considered comfortably served; above it demand starts to spill.
+  target_load_factor: 0.80
+  # Percentile reference universe: airports with at least this many enplaned
+  # passengers in the last 12 months (roughly FAA small hub and up).
+  scoring_universe_min_pax: 500000
+
+regions:                      # US Census divisions (+ one convenience region)
+  new england: [CT, ME, MA, NH, RI, VT]
+  mid-atlantic: [NJ, NY, PA]
+  south atlantic: [DE, DC, FL, GA, MD, NC, SC, VA, WV]
+  east north central: [IL, IN, MI, OH, WI]
+  west north central: [IA, KS, MN, MO, NE, ND, SD]
+  east south central: [AL, KY, MS, TN]
+  west south central: [AR, LA, OK, TX]
+  mountain: [AZ, CO, ID, MT, NV, NM, UT, WY]
+  pacific: [AK, CA, HI, OR, WA]
+  west coast: [CA, OR, WA]
+
+profiles:
+  terminal_expansion:
+    description: >-
+      Where would added terminal/gate capacity most likely be filled and pay back?
+      Rewards growing, full, large, capacity-stressed airports.
+    components:
+      - key: growth
+        label: Demand growth
+        metrics: [pax_growth_yoy, pax_added_l12m]
+        weight: 0.25
+        rationale: >-
+          Passenger growth fills new terminal capacity and grows per-passenger revenue (fees,
+          concessions, parking). Measured both as % growth (momentum) and passengers added
+          (volume), so a small airport growing fast off a tiny base does not dominate.
+      - key: utilization
+        label: Seat utilization
+        metrics: [load_factor]
+        weight: 0.20
+        rationale: Full flights mean demand is already pressing on available capacity.
+      - key: supply_gap
+        label: Demand outpacing supply
+        metrics: [demand_supply_gap]
+        weight: 0.10
+        rationale: Passengers growing faster than seats signals airlines are constrained, e.g. by gates.
+      - key: scale
+        label: Scale
+        metrics: [passengers_l12m]
+        weight: 0.20
+        rationale: Larger passenger bases spread fixed renovation costs and reduce revenue risk.
+      - key: congestion
+        label: Operational congestion
+        metrics: [avg_taxi_out_min, nas_delay_min_per_arrival, dep_delay_rate]
+        weight: 0.15
+        rationale: >-
+          Delays and long taxi times show infrastructure under stress. Caveat: runway/airspace
+          limits are not fixed by a terminal project alone.
+      - key: recovery
+        label: Above pre-COVID peak
+        metrics: [pax_vs_2019]
+        weight: 0.10
+        rationale: Airports above 2019 volumes run facilities sized for less traffic.
+
+  congestion:
+    description: >-
+      How congested is the airport today? Higher = more congested. Combines delay, taxi
+      time, ATC volume delay, schedule peaking and seat utilization.
+    components:
+      - key: atc_volume_delay
+        label: ATC / volume delay
+        metrics: [nas_delay_min_per_arrival]
+        weight: 0.30
+        rationale: NAS delay is the FAA-attributed delay from traffic volume and ATC - the cleanest congestion signal.
+      - key: taxi
+        label: Taxi-out time
+        metrics: [avg_taxi_out_min]
+        weight: 0.20
+        rationale: Queues for the runway show up as longer taxi-out times.
+      - key: punctuality
+        label: Departure delays
+        metrics: [dep_delay_rate]
+        weight: 0.20
+        rationale: Share of departures 15+ minutes late (all causes).
+      - key: peaking
+        label: Schedule peaking
+        metrics: [peak_to_average]
+        weight: 0.10
+        rationale: Sharp peaks concentrate demand into hours where capacity binds.
+      - key: utilization
+        label: Seat utilization
+        metrics: [load_factor]
+        weight: 0.20
+        rationale: Full aircraft = passenger-side congestion (terminal, security, gates).
