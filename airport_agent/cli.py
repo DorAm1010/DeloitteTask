@@ -28,6 +28,9 @@ def main() -> None:
             for call in reply.tool_calls:
                 print(f"  [tool] {call.name}({call.input}){' ERROR' if call.is_error else ''}")
         print(f"\nagent> {reply.text}\n")
+        for call in reply.tool_calls:
+            if call.name == "show_chart" and not call.is_error:
+                print(f"  [chart: {call.input.get('chart')} for {call.input.get('iatas')} - open the web UI to see it]\n")
 
 
 if __name__ == "__main__":

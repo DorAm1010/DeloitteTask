@@ -40,7 +40,7 @@ every push:
 pytest
 ```
 
-Evals: run the real agent on 15 analyst questions and grade the answers automatically. Checks: every number is
+Evals: run the real agent on 17 analyst questions and grade the answers automatically. Checks: every number is
 found in the tool outputs (hallucination rate), the right tools were called, the answer includes key facts and a
 caveats section. Needs an API key; costs a few dollars per run:
 
@@ -57,6 +57,9 @@ python -m tests.evals.run --only brief_sfo_unmet_demand
 - **Explainable answers:** every answer includes assumptions and caveats. The UI's "How I got this" panel shows
   every tool call with its inputs and outputs.
 - **Conversational:** follow-up questions keep context; analysts can change weights or thresholds in plain English.
+- **Charts on demand:** when a visual helps (a ranking and its drivers, a trend, a distance mix) the agent shows
+  one chart under its answer. It picks the chart type and airports; the numbers are computed by the same
+  deterministic code, so a chart can't show an invented figure. Each chart has a "View data" table.
 - **Observability:** each answer shows latency, tokens and estimated cost. Every tool call and answer is logged
   as JSON lines to `logs/agent.log`.
 - **Voice (bonus):** speak questions and have answers read aloud, using the browser Web Speech API
@@ -73,6 +76,7 @@ airport_agent/
   analysis.py   route mix / long haul, unmet demand, airport profile, live FAA status
   tools.py      tool schemas the LLM sees + dispatcher
   agent.py      the Claude tool-use loop
+  charts.py     chart specs (score breakdown, monthly trend, route mix) from deterministic data
   telemetry.py  token usage, cost estimate, JSONL logging
   server.py     FastAPI backend;  web/index.html  chat UI with voice
   cli.py        terminal chat

@@ -93,3 +93,16 @@
   must_mention: ["XYZ"]
   require_caveats: false
   min_grounding: null
+
+# --- Charts ---------------------------------------------------------------------
+- id: chart_trend
+  turns: ["Show me how SFO's load factor has moved over the last two years."]
+  expect_tools: ["show_chart(chart=monthly_trend)"]
+  must_mention: ["SFO"]
+
+- id: no_chart_for_simple_fact
+  turns: ["What is the IATA code for Santa Ana's airport?"]
+  forbid_tools: ["show_chart"]
+  must_mention: ["SNA"]
+  require_caveats: false
+  min_grounding: null

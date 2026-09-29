@@ -41,6 +41,11 @@ def _preview(output: str, limit: int = 1500) -> str:
     return text if len(text) <= limit else text[:limit] + "\n..."
 
 
+def _charts(calls) -> list[dict]:
+    """Chart specs from successful show_chart calls (computed by charts.py, not by the model)."""
+    return [json.loads(c.output)["chart"] for c in calls if c.name == "show_chart" and not c.is_error]
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(WEB_DIR / "index.html")
@@ -63,6 +68,7 @@ def chat(req: ChatRequest) -> dict:  # sync def -> FastAPI runs it in a worker t
         "answer": reply.text,
         "stop_reason": reply.stop_reason,
         "usage": {**reply.usage.to_dict(), "cost_usd": reply.cost_usd, "latency_s": reply.latency_s},
+        "charts": _charts(reply.tool_calls),
         "tool_calls": [{"name": c.name, "input": c.input, "is_error": c.is_error,
                         "output_preview": _preview(c.output)} for c in reply.tool_calls],
     }

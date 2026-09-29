@@ -11,6 +11,7 @@ import json
 from typing import Any, Callable
 
 from . import analysis, config
+from .charts import CHART_TYPES, TREND_METRICS, build_chart
 from .metrics import METRIC_DEFINITIONS, data_vintage
 from .scoring import PROFILES, score_airports
 
@@ -133,6 +134,29 @@ TOOLS: list[dict[str, Any]] = [
         "input_schema": {"type": "object", "properties": {"iatas": {"type": "array", "items": IATA}}},
     },
     {
+        "name": "show_chart",
+        "description": "Display a chart to the user under your answer. Use it only when a visual adds something "
+                       "a sentence can't: a ranking of 3+ airports and why (score_breakdown), a change over time "
+                       "(monthly_trend), or a distance mix (route_mix). At most one chart per answer, and none "
+                       "for simple factual answers. The chart's numbers are computed by the system, so they "
+                       "match the other tools. Types: " + "; ".join(f"{k}: {v}" for k, v in CHART_TYPES.items()),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "chart": {"type": "string", "enum": sorted(CHART_TYPES)},
+                "iatas": {"type": "array", "items": IATA,
+                          "description": "score_breakdown: up to 10; monthly_trend: up to 4; route_mix: exactly 1."},
+                "profile": {"type": "string", "enum": sorted(PROFILES),
+                            "description": "score_breakdown only (default terminal_expansion)."},
+                "metric": {"type": "string", "enum": list(TREND_METRICS),
+                           "description": "monthly_trend only (default load_factor)."},
+                "weights": {"type": "object", "additionalProperties": {"type": "number"},
+                            "description": "score_breakdown only: same weight overrides used in score_airports."},
+            },
+            "required": ["chart", "iatas"],
+        },
+    },
+    {
         "name": "get_methodology",
         "description": "Scoring methodology, weights, assumptions, metric definitions, what is NOT modelled, and "
                        "data vintage. Call this when the user asks how scores work or what assumptions are used.",
@@ -148,6 +172,7 @@ HANDLERS: dict[str, Callable[..., dict]] = {
     "estimate_unmet_demand": analysis.unmet_demand,
     "get_live_faa_status": lambda iatas=None: analysis.live_faa_status(iatas),
     "get_methodology": _methodology,
+    "show_chart": build_chart,
 }
 
 

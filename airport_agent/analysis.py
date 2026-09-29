@@ -151,6 +151,12 @@ def route_mix(iata: str, long_haul_miles: int = config.LONG_HAUL_MILES) -> dict:
         "passenger_flights": share(pax),
         "all_flights_incl_international_cargo": share(legs),
         "passenger_distance_bands": bands,
+        "departures_by_band": {
+            "passenger_flights": {b: int(pax.loc[pax["band"] == b, "departures"].sum())
+                                  for _, _, b in config.DISTANCE_BANDS},
+            "all_flights_incl_international_cargo": {b: int(legs.loc[legs["band"] == b, "departures"].sum())
+                                                     for _, _, b in config.DISTANCE_BANDS},
+        },
         "top_long_haul_routes": top_lh,
         "coverage": {
             "t100_departures_l12m_all_carriers": int(t100_deps),
