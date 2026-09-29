@@ -117,3 +117,60 @@ def test_telemetry_summary_kpis():
     AirportAgent(client=client).ask("q")
     s = summarize()
     assert s["answers"] == 1 and s["completion_rate"] == 1.0 and s["tool_error_rate"] == 1.0
+
+
+class _FailingClient(FakeClient):
+    """Returns scripted responses, then raises the given SDK exception."""
+
+    def __init__(self, responses, exc):
+        super().__init__(responses)
+        self.exc = exc
+
+    def _create(self, **kwargs):
+        if not self.responses:
+            raise self.exc
+        return super()._create(**kwargs)
+
+
+def _api_error(cls, status, message):
+    import httpx2
+    request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+    response = httpx2.Response(status, request=request)
+    return cls(message, response=response, body={"error": {"message": message}})
+
+
+def test_api_error_becomes_friendly_message_and_history_rolls_back():
+    import anthropic
+    import pytest
+    from airport_agent.agent import AgentError
+    exc = _api_error(anthropic.BadRequestError, 400, "Your credit balance is too low to access the Anthropic API.")
+    # First call asks for a tool, second call fails: the dangling tool_use must not stay in history.
+    client = _FailingClient([NS(stop_reason="tool_use", content=[tool_use("t1", "get_methodology", {})])], exc)
+    agent = AirportAgent(client=client)
+    with pytest.raises(AgentError) as info:
+        agent.ask("How does scoring work?")
+    assert info.value.status == 402 and "credits" in info.value.message
+    assert agent.messages == []                  # rolled back; the next question starts clean
+
+
+def test_auth_and_connection_errors_are_described():
+    import anthropic
+    from airport_agent.agent import describe_api_error
+    auth = describe_api_error(_api_error(anthropic.AuthenticationError, 401, "invalid x-api-key"))
+    assert auth.status == 401 and "ANTHROPIC_API_KEY" in auth.message
+    import httpx2
+    conn = describe_api_error(anthropic.APIConnectionError(request=httpx2.Request("POST", "https://x")))
+    assert conn.status == 503 and "internet" in conn.message
+
+
+def test_server_returns_json_error_instead_of_500(monkeypatch):
+    import anthropic
+    import pytest
+    from fastapi import HTTPException
+    from airport_agent import server
+    exc = _api_error(anthropic.BadRequestError, 400, "Your credit balance is too low to access the Anthropic API.")
+    monkeypatch.setattr(server, "AirportAgent", lambda: AirportAgent(client=_FailingClient([], exc)))
+    server._sessions.clear()
+    with pytest.raises(HTTPException) as info:
+        server.chat(server.ChatRequest(message="hi"))
+    assert info.value.status_code == 402 and "credits" in info.value.detail

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sys
 
-from .agent import AirportAgent
+from .agent import AgentError, AirportAgent
 
 
 def main() -> None:
@@ -23,7 +23,11 @@ def main() -> None:
             continue
         if not question:
             continue
-        reply = agent.ask(question)
+        try:
+            reply = agent.ask(question)
+        except AgentError as err:
+            print(f"\nerror> {err.message}\n")
+            continue
         if trace:
             for call in reply.tool_calls:
                 print(f"  [tool] {call.name}({call.input}){' ERROR' if call.is_error else ''}")
