@@ -24,6 +24,33 @@ from .grounding import grounding
 from .telemetry import Usage, log_event
 from .tools import TOOLS, run_tool
 
+class AgentError(Exception):
+    """A model call failed. `message` is safe to show the user; `status` is an HTTP status for the web API."""
+
+    def __init__(self, message: str, status: int = 502):
+        super().__init__(message)
+        self.message, self.status = message, status
+
+
+def describe_api_error(exc: Exception) -> AgentError:
+    """Turn Anthropic SDK exceptions into a short, actionable message instead of a traceback."""
+    detail = getattr(exc, "message", None) or str(exc)
+    if isinstance(exc, anthropic.AuthenticationError):
+        return AgentError("The Anthropic API key was rejected. Check ANTHROPIC_API_KEY in .env and restart.", 401)
+    if isinstance(exc, anthropic.PermissionDeniedError):
+        return AgentError(f"The API key isn't allowed to use this model or feature: {detail}", 403)
+    if isinstance(exc, anthropic.BadRequestError) and "credit balance" in detail.lower():
+        return AgentError("Your Anthropic account is out of credits. Add credits in the Anthropic console "
+                          "(Plans & Billing), then try again.", 402)
+    if isinstance(exc, anthropic.RateLimitError):
+        return AgentError("Rate limit reached on the Anthropic API. Wait a minute and try again.", 429)
+    if isinstance(exc, anthropic.APIConnectionError):
+        return AgentError("Can't reach the Anthropic API. Check your internet connection.", 503)
+    if isinstance(exc, anthropic.APIStatusError):
+        return AgentError(f"The Anthropic API returned an error ({exc.status_code}): {detail}", 502)
+    return AgentError(f"The model call failed: {detail}", 502)
+
+
 @dataclass
 class ToolCall:
     name: str
@@ -74,6 +101,20 @@ class AirportAgent:
         return self.client.messages.create(**kwargs)
 
     def ask(self, question: str) -> AgentReply:
+        """Answer one question. On an API failure, raises AgentError and leaves the history unchanged."""
+        checkpoint = len(self.messages)
+        try:
+            return self._ask(question)
+        except anthropic.AnthropicError as exc:
+            # Roll back the half-finished turn, so a dangling tool_use can't break the next request
+            # and the failed question doesn't get merged into the next one.
+            del self.messages[checkpoint:]
+            err = describe_api_error(exc)
+            log_event("error", session=self.session_id, model=self.model, question=question,
+                      status=err.status, error=err.message)
+            raise err from exc
+
+    def _ask(self, question: str) -> AgentReply:
         self.messages.append({"role": "user", "content": question})
         calls: list[ToolCall] = []
         usage = Usage()

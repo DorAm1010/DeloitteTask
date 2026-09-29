@@ -193,7 +193,13 @@ async function send(text) {
       method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({message: text, session_id: sessionId}),
     });
-    if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+    if (!res.ok) {
+      // Prefer the server's JSON message; fall back to plain text (e.g. a proxy error page).
+      const body = await res.text();
+      let detail = body;
+      try { detail = JSON.parse(body).detail || body; } catch (_) {}
+      throw new Error(detail || res.statusText);
+    }
     const data = await res.json();
     sessionId = data.session_id;
     pending.className = "msg bot";

@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .agent import AirportAgent
+from .agent import AgentError, AirportAgent
 from .metrics import data_vintage
 
 app = FastAPI(title="Airport Investment Intelligence Agent")
@@ -62,7 +62,10 @@ def chat(req: ChatRequest) -> dict:  # sync def -> FastAPI runs it in a worker t
         raise HTTPException(400, "Empty message")
     session_id = req.session_id or str(uuid.uuid4())
     agent = _sessions.setdefault(session_id, AirportAgent())
-    reply = agent.ask(req.message)
+    try:
+        reply = agent.ask(req.message)
+    except AgentError as err:  # always JSON, so the UI can show a readable message
+        raise HTTPException(err.status, err.message) from err
     return {
         "session_id": session_id,
         "answer": reply.text,
