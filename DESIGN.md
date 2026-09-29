@@ -33,7 +33,7 @@ Public APIs │ BTS Socrata (T-100 by airport) · DOT Socrata (T-100 intl routes
                   scores,          profiles, live FAA feed)
                   sensitivity)
                             ▼
-                tools.py  (7 tools: JSON schema + Python function)
+                tools.py  (8 tools: JSON schema + Python function)
                             ▼
                 agent.py  (Claude tool-use loop, conversation memory)
                             ▼
@@ -133,6 +133,13 @@ repeat. Otherwise return the text. The full history is kept, which is what makes
 - The UI shows every tool call with its inputs and outputs ("How I got this"), so answers can be audited.
 - Server-side refusal fallback (beta), prompt caching of the stable prefix, and model/effort set through config.
 
+**Charts.** A `show_chart` tool lets the model decide *whether* a chart helps and which of three types (score
+breakdown, monthly trend, route mix). The chart's numbers are computed by `charts.py` from the same deterministic
+functions, not typed by the model. The server passes the spec to the UI, which draws it with Chart.js. When to
+chart is guided by the tool description and one rule in the system prompt: at most one chart, none for simple
+answers, and no table repeating the chart. Evals check both directions (a chart when asked, none for a simple
+fact).
+
 **Configuration as data.** The system prompt lives in `prompts/system.md`, and every analyst judgement
 (thresholds, regions, scoring components, weights and rationales) lives in `config/scoring.yaml`. Both can be
 reviewed and diffed like code, and changed without touching Python. A client-specific investment thesis is just
@@ -145,7 +152,7 @@ answer.
 **Evaluation.** Three layers:
 1. Unit tests for the deterministic layer.
 2. Agent-loop tests with a scripted fake model.
-3. An eval set (`tests/evals/`) of 15 analyst questions run against the real model: the brief's four questions,
+3. An eval set (`tests/evals/`) of 17 analyst questions run against the real model: the brief's four questions, chart use,
    follow-ups, variations, and out-of-scope and error cases.
 
 Eval answers are graded automatically, without an LLM judge:

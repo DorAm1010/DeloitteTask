@@ -6,15 +6,21 @@
 <title>Airport Investment Agent</title>
 <script src="/vendor/marked.min.js"></script>
 <script src="/vendor/purify.min.js"></script>
+<script src="/vendor/chart.umd.min.js"></script>
 <style>
   :root {
     --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5f6b7a; --border: #dde2e8;
     --accent: #0b6e4f; --accent-soft: #e3f2ec; --user: #1f4e79; --user-text: #ffffff; --code: #f0f2f5;
+    /* Categorical chart palette in fixed order (CVD-validated reference palette) */
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
+    --grid: #e6e8eb;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #12161c; --panel: #1b2129; --text: #e6e9ee; --muted: #9aa5b3; --border: #2c3440;
       --accent: #3fbf8f; --accent-soft: #1e3a30; --user: #2b5f8f; --user-text: #ffffff; --code: #242b35;
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+      --grid: #2c3440;
     }
   }
   * { box-sizing: border-box; }
@@ -33,6 +39,11 @@
   .bot pre { padding: 8px; overflow-x: auto; font-size: 12px; }
   details.trace { margin-top: 10px; font-size: 13px; color: var(--muted); }
   details.trace summary { cursor: pointer; }
+  .chart { margin-top: 12px; }
+  .chart h4 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+  .chart .canvas-wrap { position: relative; width: 100%; }
+  .chart .source { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .chart details { font-size: 13px; color: var(--muted); margin-top: 4px; }
   .usage { margin-top: 6px; font-size: 12px; color: var(--muted); }
   .tool { border-left: 3px solid var(--accent); padding: 4px 10px; margin: 8px 0; }
   .tool.err { border-color: #c0392b; }
@@ -94,6 +105,51 @@ function addMessage(cls, html) {
   return div;
 }
 
+// --- Charts: specs come from the server (computed by charts.py), never from the model's text ---
+let chartCount = 0;
+const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const fmt = (v, kind) => v == null ? "–" : kind === "percent" ? (v * 100).toFixed(1) + "%" : Number(v).toLocaleString();
+
+function chartHtml(spec) {
+  const id = "chart" + (++chartCount);
+  const n = spec.horizontal ? spec.labels.length : 0;
+  const height = spec.horizontal ? 60 + n * 32 : 260;
+  const head = "<tr><th></th>" + spec.series.map(s => `<th>${esc(s.name)}</th>`).join("") + "</tr>";
+  const rows = spec.labels.map((l, i) => `<tr><td>${esc(String(l))}</td>` +
+    spec.series.map(s => `<td>${fmt(s.values[i], spec.value_format)}</td>`).join("") + "</tr>").join("");
+  return {id, html: `<div class="chart"><h4>${esc(spec.title)}</h4>
+    <div class="canvas-wrap" style="height:${height}px"><canvas id="${id}" role="img" aria-label="${esc(spec.title)}"></canvas></div>
+    <div class="source">Source: ${esc(spec.source)}</div>
+    <details><summary>View data</summary><table>${head}${rows}</table></details></div>`};
+}
+
+function drawChart(id, spec) {
+  const text = cssVar("--muted"), grid = cssVar("--grid"), surface = cssVar("--panel");
+  const valueAxis = {grid: {color: grid}, ticks: {color: text, callback: v => fmt(v, spec.value_format)},
+                     stacked: !!spec.stacked, beginAtZero: spec.type === "bar"};
+  const catAxis = {grid: {display: false}, ticks: {color: text, autoSkip: true, maxRotation: 0}, stacked: !!spec.stacked};
+  new Chart(document.getElementById(id), {
+    type: spec.type,
+    data: {labels: spec.labels, datasets: spec.series.map((s, i) => {
+      const color = cssVar("--s" + ((i % 8) + 1));
+      return spec.type === "line"
+        ? {label: s.name, data: s.values, borderColor: color, backgroundColor: color, borderWidth: 2,
+           pointRadius: 0, pointHoverRadius: 5, spanGaps: true, tension: 0.2}
+        : {label: s.name, data: s.values, backgroundColor: color, borderColor: surface, borderWidth: 1,
+           borderRadius: 4, maxBarThickness: spec.horizontal ? 22 : 36};
+    })},
+    options: {
+      responsive: true, maintainAspectRatio: false, indexAxis: spec.horizontal ? "y" : "x",
+      interaction: {mode: "index", intersect: false},
+      plugins: {
+        legend: {display: spec.series.length > 1, position: "bottom", labels: {color: text, boxWidth: 12}},
+        tooltip: {callbacks: {label: c => `${c.dataset.label}: ${fmt(c.raw, spec.value_format)}`}},
+      },
+      scales: spec.horizontal ? {x: valueAxis, y: catAxis} : {x: catAxis, y: valueAxis},
+    },
+  });
+}
+
 function renderUsage(u) {
   if (!u) return "";
   const tokens = u.input_tokens + u.output_tokens + u.cache_creation_input_tokens + u.cache_read_input_tokens;
@@ -132,7 +188,10 @@ async function send(text) {
     const data = await res.json();
     sessionId = data.session_id;
     pending.className = "msg bot";
-    pending.innerHTML = DOMPurify.sanitize(marked.parse(data.answer)) + renderTrace(data.tool_calls, data.usage);
+    const charts = (data.charts || []).map(spec => ({spec, ...chartHtml(spec)}));
+    pending.innerHTML = DOMPurify.sanitize(marked.parse(data.answer)) + charts.map(c => c.html).join("") +
+                        renderTrace(data.tool_calls, data.usage);
+    charts.forEach(c => drawChart(c.id, c.spec));
     speak(data.answer);
   } catch (err) {
     pending.className = "msg bot";
