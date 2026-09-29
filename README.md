@@ -60,8 +60,10 @@ python -m tests.evals.run --only brief_sfo_unmet_demand
 - **Charts on demand:** when a visual helps (a ranking and its drivers, a trend, a distance mix) the agent shows
   one chart under its answer. It picks the chart type and airports; the numbers are computed by the same
   deterministic code, so a chart can't show an invented figure. Each chart has a "View data" table.
-- **Observability:** each answer shows latency, tokens and estimated cost. Every tool call and answer is logged
-  as JSON lines to `logs/agent.log`.
+- **Observability:** each answer shows latency, tokens, estimated cost and a **grounding check** (whether every
+  number in the answer traces to tool data; untraced numbers are listed). Every tool call and answer is logged
+  as JSON lines to `logs/agent.log`. `python -m airport_agent.telemetry` summarises it into agent KPIs:
+  hallucination rate, completion rate, tool error rate, cost and latency per answer.
 - **Voice (bonus):** speak questions and have answers read aloud, using the browser Web Speech API
   (Chrome/Edge/Safari).
 
@@ -77,7 +79,8 @@ airport_agent/
   tools.py      tool schemas the LLM sees + dispatcher
   agent.py      the Claude tool-use loop
   charts.py     chart specs (score breakdown, monthly trend, route mix) from deterministic data
-  telemetry.py  token usage, cost estimate, JSONL logging
+  grounding.py  deterministic check that answer numbers come from tool outputs (live + evals)
+  telemetry.py  token usage, cost estimate, JSONL logging, KPI summary
   server.py     FastAPI backend;  web/index.html  chat UI with voice
   cli.py        terminal chat
 config/scoring.yaml  analyst assumptions: thresholds, regions, scoring weights (edit without code)

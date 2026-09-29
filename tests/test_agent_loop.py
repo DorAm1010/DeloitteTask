@@ -92,3 +92,28 @@ def test_usage_cost_and_telemetry_are_recorded():
     assert reply.usage.model_calls == 1
     log_lines = (config.LOG_DIR / "agent.log").read_text().splitlines()
     assert '"event": "answer"' in log_lines[-1]
+
+
+def test_live_grounding_flags_numbers_not_in_tool_outputs():
+    client = FakeClient([
+        NS(stop_reason="tool_use", content=[tool_use("t1", "find_airports", {"query": "santa ana"})]),
+        NS(stop_reason="end_turn", content=[text("SNA had 5,590,354 passengers and a 97.3% load factor.")]),
+        NS(stop_reason="end_turn", content=[text("As I said, 5,590,354 passengers.")]),
+    ])
+    agent = AirportAgent(client=client)
+    first = agent.ask("How busy is Santa Ana?")
+    assert first.ungrounded == ["97.3%"]       # invented; the passenger count is in the tool output
+    assert first.grounding == 0.5
+    follow_up = agent.ask("Remind me?")          # no new tools: earlier turns' data still counts
+    assert follow_up.grounding == 1.0
+
+
+def test_telemetry_summary_kpis():
+    from airport_agent.telemetry import summarize
+    client = FakeClient([
+        NS(stop_reason="tool_use", content=[tool_use("t1", "get_airport_profile", {"iata": "ZZZ"})]),
+        NS(stop_reason="end_turn", content=[text("No data for ZZZ.")]),
+    ])
+    AirportAgent(client=client).ask("q")
+    s = summarize()
+    assert s["answers"] == 1 and s["completion_rate"] == 1.0 and s["tool_error_rate"] == 1.0

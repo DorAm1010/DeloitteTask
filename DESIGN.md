@@ -146,8 +146,20 @@ reviewed and diffed like code, and changed without touching Python. A client-spe
 another YAML file (`SCORING_CONFIG=...`).
 
 **Observability.** Every tool call (name, input, duration, error) and every answer (tools used, latency, tokens,
-estimated cost) is written as one JSON line to `logs/agent.log`. The UI shows latency, tokens and cost under each
-answer.
+estimated cost, grounding) is written as one JSON line to `logs/agent.log`. The UI shows latency, tokens and cost
+under each answer.
+
+**Live grounding check.** The eval set's hallucination check (`grounding.py`) also runs on every live answer, at no
+cost: each number in the answer must match a number in the conversation's tool outputs within its displayed
+rounding. Untraced numbers are listed under the answer and logged. Often they are the model's own arithmetic,
+which the system prompt discourages. `python -m airport_agent.telemetry` turns the log into agent KPIs:
+- share of fully grounded answers (the hallucination KPI)
+- completion rate
+- tool error rate
+- mean cost, latency and tool calls per answer
+
+These cover the operational KPIs (hallucination rate, autonomous completion, cost per analysis). Time-to-value is
+measured outside the system, as analyst time per screen before and after.
 
 **Evaluation.** Three layers:
 1. Unit tests for the deterministic layer.
