@@ -13,9 +13,11 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
-load_dotenv()
-
 ROOT = Path(__file__).resolve().parent.parent
+ENV_FILE = ROOT / ".env"
+# Load the repo's own .env (not whichever one is found from the current directory).
+# Real environment variables still win over the file.
+load_dotenv(ENV_FILE)
 DATA_DIR = ROOT / "data"
 RAW_DIR = DATA_DIR / "raw"            # large downloads, git-ignored
 PROCESSED_DIR = DATA_DIR / "processed"  # small aggregated tables, committed

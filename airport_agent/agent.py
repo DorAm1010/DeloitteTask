@@ -32,9 +32,16 @@ class AgentError(Exception):
         self.message, self.status = message, status
 
 
+def _missing_key_error() -> AgentError:
+    return AgentError(f"No Anthropic API key found. Put ANTHROPIC_API_KEY=... in {config.ENV_FILE} "
+                      "(copy .env.example) or set it as an environment variable, then restart.", 401)
+
+
 def describe_api_error(exc: Exception) -> AgentError:
     """Turn Anthropic SDK exceptions into a short, actionable message instead of a traceback."""
     detail = getattr(exc, "message", None) or str(exc)
+    if isinstance(exc, anthropic.CredentialsError):  # e.g. a broken `ant auth login` profile
+        return _missing_key_error()
     if isinstance(exc, anthropic.AuthenticationError):
         return AgentError("The Anthropic API key was rejected. Check ANTHROPIC_API_KEY in .env and restart.", 401)
     if isinstance(exc, anthropic.PermissionDeniedError):
@@ -74,7 +81,8 @@ class AgentReply:
 
 class AirportAgent:
     def __init__(self, client: anthropic.Anthropic | None = None, model: str = config.MODEL):
-        self.client = client or anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from the environment
+        # Created lazily on first use, so a missing/broken credential becomes a clear AgentError in ask().
+        self.client = client
         self.model = model
         self.messages: list[dict] = []
         self.session_id = str(uuid.uuid4())
@@ -83,6 +91,8 @@ class AirportAgent:
         self.messages = []
 
     def _call_model(self, **extra):
+        if self.client is None:
+            self.client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from the environment / .env
         kwargs = dict(
             model=self.model,
             max_tokens=16000,
@@ -105,6 +115,12 @@ class AirportAgent:
         checkpoint = len(self.messages)
         try:
             return self._ask(question)
+        except TypeError as exc:
+            # The SDK raises TypeError (not an API error) at request time when it finds no credentials.
+            if "authentication method" not in str(exc):
+                raise
+            del self.messages[checkpoint:]
+            raise _missing_key_error() from exc
         except anthropic.AnthropicError as exc:
             # Roll back the half-finished turn, so a dangling tool_use can't break the next request
             # and the failed question doesn't get merged into the next one.

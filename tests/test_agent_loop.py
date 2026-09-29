@@ -174,3 +174,29 @@ def test_server_returns_json_error_instead_of_500(monkeypatch):
     with pytest.raises(HTTPException) as info:
         server.chat(server.ChatRequest(message="hi"))
     assert info.value.status_code == 402 and "credits" in info.value.detail
+
+
+def test_missing_api_key_gives_clear_message(monkeypatch, tmp_path):
+    import pytest
+    from airport_agent import config
+    from airport_agent.agent import AgentError
+    for var in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE", "ANTHROPIC_CONFIG_DIR",
+                "ANTHROPIC_BASE_URL"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))     # no `ant auth login` profile either
+    agent = AirportAgent()                        # real SDK client, created lazily
+    with pytest.raises(AgentError) as info:
+        agent.ask("hi")
+    assert info.value.status == 401 and str(config.ENV_FILE) in info.value.message
+    assert agent.messages == []
+
+
+def test_broken_credentials_profile_gives_same_message(monkeypatch):
+    import pytest
+    from airport_agent.agent import AgentError
+    for var in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("ANTHROPIC_CONFIG_DIR", "/nonexistent")  # SDK fails while creating the client
+    with pytest.raises(AgentError) as info:
+        AirportAgent().ask("hi")
+    assert info.value.status == 401 and "ANTHROPIC_API_KEY" in info.value.message
