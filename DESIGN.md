@@ -133,6 +133,30 @@ repeat. Otherwise return the text. The full history is kept, which is what makes
 - The UI shows every tool call with its inputs and outputs ("How I got this"), so answers can be audited.
 - Server-side refusal fallback (beta), prompt caching of the stable prefix, and model/effort set through config.
 
+**Configuration as data.** The system prompt lives in `prompts/system.md`, and every analyst judgement
+(thresholds, regions, scoring components, weights and rationales) lives in `config/scoring.yaml`. Both can be
+reviewed and diffed like code, and changed without touching Python. A client-specific investment thesis is just
+another YAML file (`SCORING_CONFIG=...`).
+
+**Observability.** Every tool call (name, input, duration, error) and every answer (tools used, latency, tokens,
+estimated cost) is written as one JSON line to `logs/agent.log`. The UI shows latency, tokens and cost under each
+answer.
+
+**Evaluation.** Three layers:
+1. Unit tests for the deterministic layer.
+2. Agent-loop tests with a scripted fake model.
+3. An eval set (`tests/evals/`) of 15 analyst questions run against the real model: the brief's four questions,
+   follow-ups, variations, and out-of-scope and error cases.
+
+Eval answers are graded automatically, without an LLM judge:
+- **Grounding:** every number in the answer must match a number in that conversation's tool outputs, within its
+  displayed rounding. This gives a measurable hallucination rate.
+- **Tools:** the expected tools were called, with the expected arguments.
+- **Content:** required facts are mentioned, and the caveats section is present.
+
+The runner reports pass rate, mean grounding, cost and latency per case, and is the gate for any prompt, model
+or effort change. The first two layers run in CI on every push. Evals cost money, so they run on demand.
+
 ## 6. Key tradeoffs
 
 | Decision | Chosen | Alternative | Why |
@@ -167,4 +191,5 @@ repeat. Otherwise return the text. The full history is kept, which is what makes
    ("called rates") for true demand-vs-capacity ratios.
 3. Add DB1B fares: high fares relative to distance are a strong signal of constrained supply.
 4. Backtest: did airports with high scores in 2015–2018 later announce or deliver expansions?
-5. An evaluation set of analyst questions with expected tool calls and numbers, run in CI.
+5. Grow the eval set from real usage: add a 👍/👎 button in the UI and turn every 👎 into a new eval case. Add
+   an LLM judge (with human spot checks) for explanation quality, which the automatic checks can't measure.

@@ -80,3 +80,15 @@ def test_step_limit_forces_final_answer(monkeypatch):
     assert reply.stop_reason == "max_steps"
     assert reply.text == "partial answer"
     assert client.requests[-1]["tool_choice"] == {"type": "none"}
+
+
+def test_usage_cost_and_telemetry_are_recorded():
+    from airport_agent import config
+    usage = NS(input_tokens=1000, output_tokens=500, cache_creation_input_tokens=2000, cache_read_input_tokens=10000)
+    client = FakeClient([NS(stop_reason="end_turn", content=[text("hi")], usage=usage)])
+    reply = AirportAgent(client=client, model="claude-opus-5").ask("q")
+    # 1000*5 + 500*25 + 2000*5*1.25 + 10000*5*0.1 = 35,000 per million tokens = $0.035
+    assert reply.cost_usd == 0.035
+    assert reply.usage.model_calls == 1
+    log_lines = (config.LOG_DIR / "agent.log").read_text().splitlines()
+    assert '"event": "answer"' in log_lines[-1]

@@ -1,7 +1,2 @@
-anthropic>=1.8
-fastapi>=0.115
-uvicorn[standard]>=0.30
-pandas>=2.2
-requests>=2.32
-python-dotenv>=1.0
-pytest>=8.0
+# Installs the package plus dev tools with the exact pins from pyproject.toml.
+-e .[dev]

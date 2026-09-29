@@ -13,38 +13,15 @@ earlier questions, tool results and answers.
 """
 from __future__ import annotations
 
+import time
+import uuid
 from dataclasses import dataclass, field
 
 import anthropic
 
 from . import config
+from .telemetry import Usage, log_event
 from .tools import TOOLS, run_tool
-
-SYSTEM_PROMPT = """You are an airport investment analyst assistant for a firm that invests in US airport \
-modernization projects. You help analysts find airports where renovation/expansion is most likely to pay off \
-because flight and passenger demand is outgrowing capacity.
-
-How to work:
-- Every number you state must come from a tool result in this conversation. Never estimate figures from memory. \
-If the tools cannot answer, say so plainly and explain what data would be needed.
-- Use score_airports for any ranking or comparison; it is the firm's deterministic scoring model. Explain results \
-through its components (percentiles, weights, contributions) rather than inventing your own ranking logic.
-- Resolve ambiguous places with find_airports. "LA" usually means LAX but the region has several airports; say \
-which one you used. If a request is genuinely ambiguous, make a sensible assumption, state it, and offer the \
-alternative.
-- You may add qualitative context from curated_notes in tool results; label it as context, not data.
-
-How to answer:
-- Lead with the direct answer (a sentence or two), then the evidence as a short list or small table.
-- Always include a brief "Assumptions & caveats" section: definitions used (e.g. long-haul threshold), data \
-periods from data_vintage, coverage limits flagged by the tools, and what the model does not capture (costs, \
-airport finances, regulation).
-- Express uncertainty honestly: distinguish measured facts, derived estimates, and your interpretation.
-- Keep it concise and skimmable; analysts will ask follow-ups.
-
-Scope: US airports and public aviation data only. You do not give financial advice or predict returns; you \
-identify and explain demand/capacity signals that inform investment screening."""
-
 
 @dataclass
 class ToolCall:
@@ -52,6 +29,7 @@ class ToolCall:
     input: dict
     output: str
     is_error: bool
+    duration_ms: int = 0
 
 
 @dataclass
@@ -59,6 +37,9 @@ class AgentReply:
     text: str
     tool_calls: list[ToolCall] = field(default_factory=list)
     stop_reason: str | None = None
+    usage: Usage = field(default_factory=Usage)
+    cost_usd: float | None = None
+    latency_s: float = 0.0
 
 
 class AirportAgent:
@@ -66,6 +47,7 @@ class AirportAgent:
         self.client = client or anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from the environment
         self.model = model
         self.messages: list[dict] = []
+        self.session_id = str(uuid.uuid4())
 
     def reset(self) -> None:
         self.messages = []
@@ -74,7 +56,7 @@ class AirportAgent:
         kwargs = dict(
             model=self.model,
             max_tokens=16000,
-            system=SYSTEM_PROMPT,
+            system=config.SYSTEM_PROMPT,  # prompts/system.md
             tools=TOOLS,
             messages=self.messages,
             output_config={"effort": config.EFFORT},
@@ -91,9 +73,12 @@ class AirportAgent:
     def ask(self, question: str) -> AgentReply:
         self.messages.append({"role": "user", "content": question})
         calls: list[ToolCall] = []
+        usage = Usage()
+        started = time.perf_counter()
 
         for _ in range(config.MAX_AGENT_STEPS):
             response = self._call_model()
+            usage.add(response)
             # Keep the full content (text, thinking and tool_use blocks) - the
             # API needs it verbatim on the next request.
             self.messages.append({"role": "assistant", "content": response.content})
@@ -103,8 +88,12 @@ class AirportAgent:
                 for block in response.content:
                     if block.type != "tool_use":
                         continue
+                    t0 = time.perf_counter()
                     output, is_error = run_tool(block.name, dict(block.input))
-                    calls.append(ToolCall(block.name, dict(block.input), output, is_error))
+                    ms = int((time.perf_counter() - t0) * 1000)
+                    calls.append(ToolCall(block.name, dict(block.input), output, is_error, ms))
+                    log_event("tool_call", session=self.session_id, tool=block.name, input=dict(block.input),
+                              is_error=is_error, duration_ms=ms, output_chars=len(output))
                     results.append({"type": "tool_result", "tool_use_id": block.id,
                                     "content": output, "is_error": is_error})
                 # All results for one turn go back in a single user message.
@@ -116,12 +105,23 @@ class AirportAgent:
                 text = text or "The model declined to answer this request."
             elif response.stop_reason == "max_tokens":
                 text += "\n\n_(Answer truncated: output limit reached. Ask me to continue.)_"
-            return AgentReply(text=text, tool_calls=calls, stop_reason=response.stop_reason)
+            return self._finish(question, text, calls, response.stop_reason, usage, started)
 
         # Safety valve against runaway loops: force a final answer without tools.
         self.messages.append({"role": "user", "content": (
             "You have reached the tool-call limit. Answer now with what you have and say what is missing.")})
         response = self._call_model(tool_choice={"type": "none"})
+        usage.add(response)
         self.messages.append({"role": "assistant", "content": response.content})
         text = "".join(b.text for b in response.content if b.type == "text").strip()
-        return AgentReply(text=text, tool_calls=calls, stop_reason="max_steps")
+        return self._finish(question, text, calls, "max_steps", usage, started)
+
+    def _finish(self, question: str, text: str, calls: list[ToolCall], stop_reason: str | None,
+                usage: Usage, started: float) -> AgentReply:
+        reply = AgentReply(text=text, tool_calls=calls, stop_reason=stop_reason, usage=usage,
+                           cost_usd=usage.cost_usd(self.model),
+                           latency_s=round(time.perf_counter() - started, 2))
+        log_event("answer", session=self.session_id, model=self.model, question=question,
+                  stop_reason=stop_reason, tools=[c.name for c in calls], latency_s=reply.latency_s,
+                  cost_usd=reply.cost_usd, **usage.to_dict())
+        return reply

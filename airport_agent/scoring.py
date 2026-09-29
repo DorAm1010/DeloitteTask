@@ -38,46 +38,18 @@ class Component:
         return self.higher_is_better[i] if self.higher_is_better else True
 
 
-PROFILES: dict[str, dict] = {
-    "terminal_expansion": {
-        "description": "Where would added terminal/gate capacity most likely be filled and pay back? "
-                       "Rewards growing, full, large, capacity-stressed airports.",
-        "components": [
-            Component("growth", "Demand growth", ("pax_growth_yoy", "pax_added_l12m"), 0.25,
-                      "Passenger growth fills new terminal capacity and grows per-passenger revenue (fees, "
-                      "concessions, parking). Measured both as % growth (momentum) and passengers added "
-                      "(volume), so a small airport growing fast off a tiny base does not dominate."),
-            Component("utilization", "Seat utilization", ("load_factor",), 0.20,
-                      "Full flights mean demand is already pressing on available capacity."),
-            Component("supply_gap", "Demand outpacing supply", ("demand_supply_gap",), 0.10,
-                      "Passengers growing faster than seats signals airlines are constrained, e.g. by gates."),
-            Component("scale", "Scale", ("passengers_l12m",), 0.20,
-                      "Larger passenger bases spread fixed renovation costs and reduce revenue risk."),
-            Component("congestion", "Operational congestion",
-                      ("avg_taxi_out_min", "nas_delay_min_per_arrival", "dep_delay_rate"), 0.15,
-                      "Delays and long taxi times show infrastructure under stress. Caveat: runway/airspace "
-                      "limits are not fixed by a terminal project alone."),
-            Component("recovery", "Above pre-COVID peak", ("pax_vs_2019",), 0.10,
-                      "Airports above 2019 volumes run facilities sized for less traffic."),
-        ],
-    },
-    "congestion": {
-        "description": "How congested is the airport today? Higher = more congested. "
-                       "Combines delay, taxi time, ATC volume delay, schedule peaking and seat utilization.",
-        "components": [
-            Component("atc_volume_delay", "ATC / volume delay", ("nas_delay_min_per_arrival",), 0.30,
-                      "NAS delay is the FAA-attributed delay from traffic volume and ATC - the cleanest congestion signal."),
-            Component("taxi", "Taxi-out time", ("avg_taxi_out_min",), 0.20,
-                      "Queues for the runway show up as longer taxi-out times."),
-            Component("punctuality", "Departure delays", ("dep_delay_rate",), 0.20,
-                      "Share of departures 15+ minutes late (all causes)."),
-            Component("peaking", "Schedule peaking", ("peak_to_average",), 0.10,
-                      "Sharp peaks concentrate demand into hours where capacity binds."),
-            Component("utilization", "Seat utilization", ("load_factor",), 0.20,
-                      "Full aircraft = passenger-side congestion (terminal, security, gates)."),
-        ],
-    },
-}
+def _load_profiles(raw: dict) -> dict[str, dict]:
+    """Build scoring profiles from config/scoring.yaml."""
+    profiles = {}
+    for name, spec in raw.items():
+        comps = [Component(c["key"], c["label"], tuple(c["metrics"]), float(c["weight"]), c["rationale"],
+                           tuple(c.get("higher_is_better", ())))
+                 for c in spec["components"]]
+        profiles[name] = {"description": spec["description"], "components": comps}
+    return profiles
+
+
+PROFILES: dict[str, dict] = _load_profiles(config.SCORING_CONFIG["profiles"])
 
 
 def _feature_frame() -> pd.DataFrame:
