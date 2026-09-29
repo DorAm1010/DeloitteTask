@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 import anthropic
 
 from . import config
+from .grounding import grounding
 from .telemetry import Usage, log_event
 from .tools import TOOLS, run_tool
 
@@ -40,6 +41,8 @@ class AgentReply:
     usage: Usage = field(default_factory=Usage)
     cost_usd: float | None = None
     latency_s: float = 0.0
+    grounding: float | None = None          # share of numbers traced to tool outputs (None = no numbers)
+    ungrounded: list[str] = field(default_factory=list)
 
 
 class AirportAgent:
@@ -116,12 +119,19 @@ class AirportAgent:
         text = "".join(b.text for b in response.content if b.type == "text").strip()
         return self._finish(question, text, calls, "max_steps", usage, started)
 
+    def _tool_outputs(self) -> list[str]:
+        """Every tool result in the conversation - follow-ups may cite earlier turns' data."""
+        return [item["content"] for m in self.messages if m["role"] == "user" and isinstance(m["content"], list)
+                for item in m["content"] if isinstance(item, dict) and item.get("type") == "tool_result"]
+
     def _finish(self, question: str, text: str, calls: list[ToolCall], stop_reason: str | None,
                 usage: Usage, started: float) -> AgentReply:
+        share, missing = grounding(text, self._tool_outputs())
         reply = AgentReply(text=text, tool_calls=calls, stop_reason=stop_reason, usage=usage,
                            cost_usd=usage.cost_usd(self.model),
-                           latency_s=round(time.perf_counter() - started, 2))
+                           latency_s=round(time.perf_counter() - started, 2),
+                           grounding=share, ungrounded=missing)
         log_event("answer", session=self.session_id, model=self.model, question=question,
                   stop_reason=stop_reason, tools=[c.name for c in calls], latency_s=reply.latency_s,
-                  cost_usd=reply.cost_usd, **usage.to_dict())
+                  cost_usd=reply.cost_usd, grounding=share, ungrounded=missing, **usage.to_dict())
         return reply

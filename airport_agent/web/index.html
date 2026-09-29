@@ -45,6 +45,7 @@
   .chart .source { font-size: 12px; color: var(--muted); margin-top: 4px; }
   .chart details { font-size: 13px; color: var(--muted); margin-top: 4px; }
   .usage { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  .usage .ungrounded { color: var(--text); text-decoration: underline dotted; }
   .tool { border-left: 3px solid var(--accent); padding: 4px 10px; margin: 8px 0; }
   .tool.err { border-color: #c0392b; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
@@ -150,16 +151,24 @@ function drawChart(id, spec) {
   });
 }
 
-function renderUsage(u) {
+function renderGrounding(g) {
+  if (!g || g.share == null) return "";
+  if (!g.ungrounded.length) return ` · <span title="Every number in this answer matches the tool data">all numbers traced to data</span>`;
+  const n = g.ungrounded.length;
+  return ` · <span class="ungrounded" title="Not found in tool outputs (may be the model's own arithmetic): ${esc(g.ungrounded.join(", "))}">` +
+         `${n} number${n > 1 ? "s" : ""} not traced to data: ${esc(g.ungrounded.join(", "))}</span>`;
+}
+
+function renderUsage(u, g) {
   if (!u) return "";
   const tokens = u.input_tokens + u.output_tokens + u.cache_creation_input_tokens + u.cache_read_input_tokens;
   const cost = u.cost_usd == null ? "" : ` · ~$${u.cost_usd.toFixed(3)}`;
   return `<div class="usage">${u.latency_s}s · ${u.model_calls} model call${u.model_calls === 1 ? "" : "s"} · ` +
-         `${tokens.toLocaleString()} tokens (${u.cache_read_input_tokens.toLocaleString()} cached)${cost}</div>`;
+         `${tokens.toLocaleString()} tokens (${u.cache_read_input_tokens.toLocaleString()} cached)${cost}${renderGrounding(g)}</div>`;
 }
 
-function renderTrace(calls, usage) {
-  const u = renderUsage(usage);
+function renderTrace(calls, usage, grounding) {
+  const u = renderUsage(usage, grounding);
   if (!calls.length) return u;
   const items = calls.map(c => `<div class="tool ${c.is_error ? "err" : ""}">
       <b>${esc(c.name)}</b> <code>${esc(JSON.stringify(c.input))}</code>
@@ -190,7 +199,7 @@ async function send(text) {
     pending.className = "msg bot";
     const charts = (data.charts || []).map(spec => ({spec, ...chartHtml(spec)}));
     pending.innerHTML = DOMPurify.sanitize(marked.parse(data.answer)) + charts.map(c => c.html).join("") +
-                        renderTrace(data.tool_calls, data.usage);
+                        renderTrace(data.tool_calls, data.usage, data.grounding);
     charts.forEach(c => drawChart(c.id, c.spec));
     speak(data.answer);
   } catch (err) {

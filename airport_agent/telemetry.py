@@ -57,3 +57,31 @@ def log_event(kind: str, **fields) -> None:
             fh.write(json.dumps(record, default=str) + "\n")
     except OSError as exc:
         log.warning("could not write telemetry: %s", exc)
+
+
+def summarize(path=None) -> dict:
+    """Agent KPIs from logs/agent.log: the numbers you'd put on a monitoring dashboard."""
+    path = path or config.LOG_DIR / "agent.log"
+    events = [json.loads(line) for line in open(path, encoding="utf-8")] if path.exists() else []
+    answers = [e for e in events if e["event"] == "answer"]
+    tools = [e for e in events if e["event"] == "tool_call"]
+    if not answers:
+        return {"answers": 0}
+    graded = [a for a in answers if a.get("grounding") is not None]
+    costs = [a["cost_usd"] for a in answers if a.get("cost_usd") is not None]
+    return {
+        "answers": len(answers),
+        # Share of answers where every number traced to tool data (the hallucination KPI).
+        "fully_grounded_answers": round(sum(a["grounding"] == 1 for a in graded) / len(graded), 3) if graded else None,
+        "mean_grounding": round(sum(a["grounding"] for a in graded) / len(graded), 3) if graded else None,
+        # Finished normally (not refused, truncated or stopped by the step limit).
+        "completion_rate": round(sum(a["stop_reason"] == "end_turn" for a in answers) / len(answers), 3),
+        "tool_error_rate": round(sum(t["is_error"] for t in tools) / len(tools), 3) if tools else None,
+        "mean_cost_usd": round(sum(costs) / len(costs), 4) if costs else None,
+        "mean_latency_s": round(sum(a["latency_s"] for a in answers) / len(answers), 2),
+        "mean_tool_calls": round(sum(len(a["tools"]) for a in answers) / len(answers), 2),
+    }
+
+
+if __name__ == "__main__":  # python -m airport_agent.telemetry
+    print(json.dumps(summarize(), indent=1))
