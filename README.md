@@ -54,8 +54,9 @@ python -m tests.evals.run --only brief_sfo_unmet_demand
   taxi times, distances), T-100 international routes, OurAirports, and the **live FAA airport status feed**.
 - **Deterministic scoring:** percentile-based composite scores with per-component contributions, confidence when
   data is missing, and a weight-sensitivity check (rank ranges).
-- **Explainable answers:** every answer includes assumptions and caveats. The UI's "How I got this" panel shows
-  every tool call with its inputs and outputs.
+- **Explainable answers:** every answer includes assumptions and caveats. While the agent works, the web UI and
+  CLI show each step live ("Scoring New England airports…"); afterwards the "How I got this" panel shows every
+  tool call with its inputs and outputs.
 - **Conversational:** follow-up questions keep context; analysts can change weights or thresholds in plain English.
 - **Charts on demand:** when a visual helps (a ranking and its drivers, a trend, a distance mix) the agent shows
   one chart under its answer. It picks the chart type and airports; the numbers are computed by the same

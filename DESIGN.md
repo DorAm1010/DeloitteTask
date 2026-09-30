@@ -38,6 +38,7 @@ Public APIs │ BTS Socrata (T-100 by airport) · DOT Socrata (T-100 intl routes
                 agent.py  (Claude tool-use loop, conversation memory)
                             ▼
           server.py (FastAPI) ──► web/index.html (chat + voice)     cli.py (terminal)
+          (streams progress events, then the answer, as server-sent events)
 ```
 
 **Why the split matters:** everything below `tools.py` is ordinary, testable Python that returns the same answer
@@ -132,6 +133,10 @@ repeat. Otherwise return the text. The full history is kept, which is what makes
   instead of crashing.
 - A step limit (10) forces a final answer with `tool_choice: none`.
 - The UI shows every tool call with its inputs and outputs ("How I got this"), so answers can be audited.
+- Live progress: the loop emits an event before each model call and tool call, with a plain-English label per
+  tool. The CLI shows a spinner and one line per step; the web UI streams them over server-sent events. The
+  model's own reasoning isn't shown: it would be a model-written summary, while the tool steps are the real,
+  checkable method.
 - Server-side refusal fallback (beta), prompt caching of the stable prefix, and model/effort set through config.
 
 **Model choice.** Claude, for reliable tool use and clear explanations over long JSON outputs. The model only
@@ -196,6 +201,7 @@ or effort change. The first two layers run in CI on every push. Evals cost money
 | Delay data coverage | BTS on-time (large carriers, domestic) | FAA ASPM (full coverage) | ASPM needs an account. Coverage is measured per airport and flagged when low. |
 | Long-haul definition | Distance ≥ 3,000 mi, exposed as a parameter | Block time > 6h | Distance is available for every route; block time isn't for international routes. |
 | Unmet demand | Transparent seat-gap floor + rule findings | Econometric demand model or spill curves | Achievable in a day and fully explainable. Stated as a lower bound. |
+| Progress while waiting | Stream agent steps (server-sent events) | Static "Analyzing…" message; show the model's thinking summary | Answers take 15–60 s. Showing the real tool steps explains the method as it happens; a thinking summary adds a second, unverifiable "why". |
 | Voice | Browser Web Speech API | Server speech-to-text / text-to-speech | Zero cost, no audio leaves the browser, no extra keys. Works in Chrome, Edge and Safari. |
 | Sessions | In-memory per browser session | Database | Fine for a demo. Production would persist sessions and add auth. |
 
