@@ -91,13 +91,14 @@ cleanest public congestion signal. Weather and airline delays are mostly exclude
 
 ### 4.4 Unmet demand (`analysis.unmet_demand`)
 - **Seat gap** = passengers ÷ target load factor (80%) − seats flown. This is a **floor**: it can't see
-  travellers who never tried to book because fares were high or flights sold out.
+  travellers who never tried to book because fares were high or flights sold out. The 80% comfort level is a
+  judgement call, so the gap is also reported across 78–82%, in seats and as a % of current seats.
 - Rule-based **findings** explain the *why* against explicit thresholds: load factor above target, passengers
   outgrowing seats, still below 2019, NAS delay in the national top quartile (which points to an airside
   constraint), peak-month load factor ≥ 85%.
 - Adds live FAA events and curated context.
 - Example (SFO): 82.6% load factor (p90), NAS delay p99.6, taxi-out p97, peak month 89% load factor. The seat
-  gap is about 1.0M seats/year (+3.2%). Curated context explains it: 750 ft runway spacing and the 2026 FAA
+  gap is about 1.0M seats/year (+3.2%), with a range of 0.2–1.9M (+0.7% to +5.8%). Curated context explains it: 750 ft runway spacing and the 2026 FAA
   arrival-rate cut from ~54 to ~36–42 per hour.
 
 ### 4.5 Long-haul share (`analysis.route_mix`)
@@ -132,6 +133,13 @@ repeat. Otherwise return the text. The full history is kept, which is what makes
 - A step limit (10) forces a final answer with `tool_choice: none`.
 - The UI shows every tool call with its inputs and outputs ("How I got this"), so answers can be audited.
 - Server-side refusal fallback (beta), prompt caching of the stable prefix, and model/effort set through config.
+
+**Model choice.** Claude, for reliable tool use and clear explanations over long JSON outputs. The model only
+orchestrates and explains, so it is swappable: tools are plain Python with JSON schemas, and switching provider
+means rewriting `_call_model` and the message format. I'd switch for on-premises hosting, data residency or cost.
+A small classifier such as Laya (a BERT-based model that returns bounded choices with probabilities) could route
+questions cheaply or flag low-confidence ones for clarification. That wasn't needed at this scale, and it would
+need its own calibration eval.
 
 **Charts.** A `show_chart` tool lets the model decide *whether* a chart helps and which of three types (score
 breakdown, monthly trend, route mix). The chart's numbers are computed by `charts.py` from the same deterministic
@@ -203,6 +211,16 @@ or effort change. The first two layers run in CI on every push. Evals cost money
   environmental and regulatory approval, competing airports.
 - Curated notes are dated, hand-verified context. They explain results but never change a score.
 
+**Deliberately out of scope**
+- **Precision.** Numbers are indicative. The goal is a sound, explainable method, not audited figures, so there
+  is no data-validation pipeline or architecture review beyond the tests.
+- **Market signals** (federal grants, metro growth, events and conferences). Events are noisy and reflect an
+  investor's thesis; grants and metro data would be context, never part of the score.
+- **Passenger journey and revenue data** (FAA CATS financials, TSA throughput, ground access). These are the
+  best next data sources, not needed to answer the four questions.
+- **Reviews.** Small, self-selected samples add noise and bias to a deterministic score.
+- **Decline diagnostics and turnaround screening.** Same data and method in reverse, but outside the brief.
+
 ## 8. Next steps
 1. Add T-100 route-level segment data (all carriers, seats per route) when TranStats is back, for exact long-haul
    and cargo splits.
@@ -210,5 +228,7 @@ or effort change. The first two layers run in CI on every push. Evals cost money
    ("called rates") for true demand-vs-capacity ratios.
 3. Add DB1B fares: high fares relative to distance are a strong signal of constrained supply.
 4. Backtest: did airports with high scores in 2015–2018 later announce or deliver expansions?
-5. Grow the eval set from real usage: add a 👍/👎 button in the UI and turn every 👎 into a new eval case. Add
+5. **Phase 2 metrics with client data:** capital-to-capacity yield and grant-adjusted payback (need CAPEX
+   estimates), dwell time and queue impact (need terminal operations data).
+6. Grow the eval set from real usage: add a 👍/👎 button in the UI and turn every 👎 into a new eval case. Add
    an LLM judge (with human spot checks) for explanation quality, which the automatic checks can't measure.

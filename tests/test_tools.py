@@ -34,3 +34,5 @@ def test_unmet_demand_seat_gap_math():
     d = json.loads(run_tool("estimate_unmet_demand", {"iata": "SFO", "target_load_factor": 0.8})[0])
     expected = max(0, d["passengers_l12m"] / 0.8 - d["seats_l12m"])
     assert abs(d["estimated_seat_gap_annual"] - expected) <= 1
+    low, high = d["seat_gap_range"]["annual_seats"]
+    assert low <= d["estimated_seat_gap_annual"] <= high
