@@ -54,8 +54,9 @@ python -m tests.evals.run --only brief_sfo_unmet_demand
   taxi times, distances), T-100 international routes, OurAirports, and the **live FAA airport status feed**.
 - **Deterministic scoring:** percentile-based composite scores with per-component contributions, confidence when
   data is missing, and a weight-sensitivity check (rank ranges).
-- **Explainable answers:** every answer includes assumptions and caveats. The UI's "How I got this" panel shows
-  every tool call with its inputs and outputs.
+- **Explainable answers:** answers that present data or draw an inference end with a short assumptions and caveats section. While the agent works, the web UI and
+  CLI show each step live ("Scoring New England airports…"); afterwards the "How I got this" panel shows every
+  tool call with its inputs and outputs.
 - **Conversational:** follow-up questions keep context; analysts can change weights or thresholds in plain English.
 - **Charts on demand:** when a visual helps (a ranking and its drivers, a trend, a distance mix) the agent shows
   one chart under its answer. It picks the chart type and airports; the numbers are computed by the same
@@ -102,7 +103,7 @@ so they only need to be right relative to each other.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | (required) | Claude API key |
+| `ANTHROPIC_API_KEY` | (required) | Claude API key. A variable already set in your shell overrides `.env`; the server and CLI print which one is used (last 4 characters only) at startup. |
 | `ANTHROPIC_MODEL` | `claude-opus-5` | Model used by the agent |
 | `AGENT_EFFORT` | `high` | Reasoning effort (`low`/`medium` = faster, cheaper) |
 | `AGENT_MAX_STEPS` | `10` | Maximum tool-call rounds per question |

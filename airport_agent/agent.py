@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import anthropic
@@ -22,7 +23,7 @@ import anthropic
 from . import config
 from .grounding import grounding
 from .telemetry import Usage, log_event
-from .tools import TOOLS, run_tool
+from .tools import TOOLS, describe_call, run_tool
 
 class AgentError(Exception):
     """A model call failed. `message` is safe to show the user; `status` is an HTTP status for the web API."""
@@ -87,6 +88,7 @@ class AirportAgent:
         self.messages: list[dict] = []
         self.session_id = str(uuid.uuid4())
         self.failed_question: str | None = None  # last question lost to an API error
+        self._on_progress: Callable[[dict], None] | None = None
 
     def reset(self) -> None:
         self.messages = []
@@ -112,8 +114,23 @@ class AirportAgent:
                 betas=["server-side-fallback-2026-07-01"], fallbacks="default", **kwargs)
         return self.client.messages.create(**kwargs)
 
-    def ask(self, question: str) -> AgentReply:
-        """Answer one question. On an API failure, raises AgentError and leaves the history unchanged."""
+    def _emit(self, **event) -> None:
+        """Report progress to the UI (CLI spinner or web stream). A broken listener never breaks the answer."""
+        if self._on_progress:
+            try:
+                self._on_progress(event)
+            except Exception:  # noqa: BLE001
+                pass
+
+    def ask(self, question: str, on_progress: Callable[[dict], None] | None = None) -> AgentReply:
+        """Answer one question. On an API failure, raises AgentError and leaves the history unchanged.
+
+        on_progress, if given, receives events while the agent works:
+          {"type": "thinking", "step": n}                  before each model call
+          {"type": "tool", "name", "label"}                before each tool runs
+          {"type": "tool_done", "name", "is_error", "ms"}  after it finishes
+        """
+        self._on_progress = on_progress
         checkpoint = len(self.messages)
         original = question
         if self.failed_question:
@@ -147,7 +164,8 @@ class AirportAgent:
         usage = Usage()
         started = time.perf_counter()
 
-        for _ in range(config.MAX_AGENT_STEPS):
+        for step in range(config.MAX_AGENT_STEPS):
+            self._emit(type="thinking", step=step)
             response = self._call_model()
             usage.add(response)
             # Keep the full content (text, thinking and tool_use blocks) - the
@@ -159,9 +177,11 @@ class AirportAgent:
                 for block in response.content:
                     if block.type != "tool_use":
                         continue
+                    self._emit(type="tool", name=block.name, label=describe_call(block.name, dict(block.input)))
                     t0 = time.perf_counter()
                     output, is_error = run_tool(block.name, dict(block.input))
                     ms = int((time.perf_counter() - t0) * 1000)
+                    self._emit(type="tool_done", name=block.name, is_error=is_error, ms=ms)
                     calls.append(ToolCall(block.name, dict(block.input), output, is_error, ms))
                     log_event("tool_call", session=self.session_id, tool=block.name, input=dict(block.input),
                               is_error=is_error, duration_ms=ms, output_chars=len(output))
@@ -181,6 +201,7 @@ class AirportAgent:
         # Safety valve against runaway loops: force a final answer without tools.
         self.messages.append({"role": "user", "content": (
             "You have reached the tool-call limit. Answer now with what you have and say what is missing.")})
+        self._emit(type="thinking", step=config.MAX_AGENT_STEPS)
         response = self._call_model(tool_choice={"type": "none"})
         usage.add(response)
         self.messages.append({"role": "assistant", "content": response.content})

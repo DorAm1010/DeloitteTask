@@ -38,6 +38,7 @@ Public APIs │ BTS Socrata (T-100 by airport) · DOT Socrata (T-100 intl routes
                 agent.py  (Claude tool-use loop, conversation memory)
                             ▼
           server.py (FastAPI) ──► web/index.html (chat + voice)     cli.py (terminal)
+          (streams progress events, then the answer, as server-sent events)
 ```
 
 **Why the split matters:** everything below `tools.py` is ordinary, testable Python that returns the same answer
@@ -127,11 +128,16 @@ repeat. Otherwise return the text. The full history is kept, which is what makes
 
 **Guardrails**
 - The system prompt requires every number to come from a tool result, rankings to come from `score_airports`,
-  and an "Assumptions & caveats" section in every answer.
+  and an "Assumptions & caveats" section at the end of answers that present data or draw an inference (only
+  when it is needed to read the answer correctly).
 - Tool errors go back to the model as `is_error` results (e.g. an unknown airport code), so it can self-correct
   instead of crashing.
 - A step limit (10) forces a final answer with `tool_choice: none`.
 - The UI shows every tool call with its inputs and outputs ("How I got this"), so answers can be audited.
+- Live progress: the loop emits an event before each model call and tool call, with a plain-English label per
+  tool. The CLI shows a spinner and one line per step; the web UI streams them over server-sent events. The
+  model's own reasoning isn't shown: it would be a model-written summary, while the tool steps are the real,
+  checkable method.
 - Server-side refusal fallback (beta), prompt caching of the stable prefix, and model/effort set through config.
 
 **Model choice.** Claude, for reliable tool use and clear explanations over long JSON outputs. The model only
@@ -147,6 +153,13 @@ functions, not typed by the model. The server passes the spec to the UI, which d
 chart is guided by the tool description and one rule in the system prompt: at most one chart, none for simple
 answers, and no table repeating the chart. Evals check both directions (a chart when asked, none for a simple
 fact).
+
+**Memory and tokens (cost).** Memory is the conversation itself: each session keeps its message history
+(questions, tool results, answers) in memory and resends it on every call, which is what makes follow-ups work;
+nothing persists across sessions. History is therefore the main cost driver, so the stable prefix (tools, system
+prompt, earlier turns) is prompt-cached and billed at about 10% on repeat calls, the data layer is cached in
+process, and cost per answer is shown and logged. History isn't trimmed yet; the next step is dropping old tool
+outputs or server-side compaction, plus a per-session budget.
 
 **Configuration as data.** The system prompt lives in `prompts/system.md`, and every analyst judgement
 (thresholds, regions, scoring components, weights and rationales) lives in `config/scoring.yaml`. Both can be
@@ -196,6 +209,7 @@ or effort change. The first two layers run in CI on every push. Evals cost money
 | Delay data coverage | BTS on-time (large carriers, domestic) | FAA ASPM (full coverage) | ASPM needs an account. Coverage is measured per airport and flagged when low. |
 | Long-haul definition | Distance ≥ 3,000 mi, exposed as a parameter | Block time > 6h | Distance is available for every route; block time isn't for international routes. |
 | Unmet demand | Transparent seat-gap floor + rule findings | Econometric demand model or spill curves | Achievable in a day and fully explainable. Stated as a lower bound. |
+| Progress while waiting | Stream agent steps (server-sent events) | Static "Analyzing…" message; show the model's thinking summary | Answers take 15–60 s. Showing the real tool steps explains the method as it happens; a thinking summary adds a second, unverifiable "why". |
 | Voice | Browser Web Speech API | Server speech-to-text / text-to-speech | Zero cost, no audio leaves the browser, no extra keys. Works in Chrome, Edge and Safari. |
 | Sessions | In-memory per browser session | Database | Fine for a demo. Production would persist sessions and add auth. |
 

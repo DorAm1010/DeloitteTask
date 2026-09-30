@@ -218,3 +218,76 @@ def test_retry_after_api_error_refers_to_the_failed_question():
     sent = agent.client.requests[0]["messages"][0]["content"]
     assert "How often is BOS delayed?" in sent and sent.endswith("try now")
     assert agent.failed_question is None         # cleared after success
+
+
+def test_progress_events_follow_the_loop():
+    client = FakeClient([
+        NS(stop_reason="tool_use", content=[tool_use("t1", "estimate_unmet_demand", {"iata": "sfo"})]),
+        NS(stop_reason="end_turn", content=[text("done")]),
+    ])
+    events = []
+    AirportAgent(client=client).ask("Unmet demand at SFO?", on_progress=events.append)
+    assert [e["type"] for e in events] == ["thinking", "tool", "tool_done", "thinking"]
+    assert events[1]["label"] == "Estimating unmet demand at SFO"
+    assert events[2]["is_error"] is False
+
+
+def test_broken_progress_listener_does_not_break_the_answer():
+    def boom(_event):
+        raise RuntimeError("listener crashed")
+    client = FakeClient([NS(stop_reason="end_turn", content=[text("fine")])])
+    assert AirportAgent(client=client).ask("hi", on_progress=boom).text == "fine"
+
+
+def test_cli_live_status_prints_steps_when_piped():
+    import io
+    from airport_agent.cli import LiveStatus
+    out = io.StringIO()                          # not a TTY: no spinner, just step lines
+    with LiveStatus(out) as status:
+        status({"type": "thinking", "step": 0})
+        status({"type": "tool", "name": "score_airports", "label": "Scoring New England airports"})
+        status({"type": "tool_done", "name": "score_airports", "is_error": True, "ms": 5})
+    assert out.getvalue() == ("  -> Scoring New England airports\n"
+                              "     (that step failed; the agent will adjust)\n")
+
+
+def _parse_sse(chunks):
+    import json
+    out = []
+    for chunk in chunks:
+        event, data = chunk.strip().split("\n")
+        out.append((event.removeprefix("event: "), json.loads(data.removeprefix("data: "))))
+    return out
+
+
+def test_stream_sends_progress_then_answer():
+    from airport_agent import server
+    client = FakeClient([
+        NS(stop_reason="tool_use", content=[tool_use("t1", "get_methodology", {})]),
+        NS(stop_reason="end_turn", content=[text("Percentiles vs a national universe.")]),
+    ])
+    events = _parse_sse(server._stream_events(AirportAgent(client=client), "How does scoring work?", "s1"))
+    assert [e for e, _ in events] == ["progress", "progress", "progress", "progress", "answer"]
+    assert events[1][1]["label"] == "Reading the scoring methodology"
+    assert events[-1][1]["answer"] == "Percentiles vs a national universe." and events[-1][1]["session_id"] == "s1"
+
+
+def test_stream_reports_errors_as_an_event_and_keeps_the_session():
+    import anthropic
+    from airport_agent import server
+    exc = _api_error(anthropic.BadRequestError, 400, "Your credit balance is too low to access the Anthropic API.")
+    events = _parse_sse(server._stream_events(AirportAgent(client=_FailingClient([], exc)), "hi", "s2"))
+    kind, data = events[-1]
+    assert kind == "error" and data["status"] == 402 and data["session_id"] == "s2"
+
+
+def test_api_key_source_is_reported_without_leaking_the_key():
+    from airport_agent.config import describe_api_key
+    used, warning = describe_api_key("sk-ant-shell-1234abcd", None)
+    assert "shell" in used and "abcd" in used and "sk-ant" not in used and warning is None
+    used, warning = describe_api_key("sk-ant-shell-1234abcd", "sk-ant-file-9999wxyz")
+    assert "shell" in used and "unset ANTHROPIC_API_KEY" in warning and "wxyz" not in warning
+    used, warning = describe_api_key(None, "sk-ant-file-9999wxyz")
+    assert ".env" in used and "wxyz" in used and warning is None
+    used, warning = describe_api_key(None, None)
+    assert "not set" in used and "ant auth login" in warning
