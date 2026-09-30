@@ -237,3 +237,15 @@ def test_broken_progress_listener_does_not_break_the_answer():
         raise RuntimeError("listener crashed")
     client = FakeClient([NS(stop_reason="end_turn", content=[text("fine")])])
     assert AirportAgent(client=client).ask("hi", on_progress=boom).text == "fine"
+
+
+def test_cli_live_status_prints_steps_when_piped():
+    import io
+    from airport_agent.cli import LiveStatus
+    out = io.StringIO()                          # not a TTY: no spinner, just step lines
+    with LiveStatus(out) as status:
+        status({"type": "thinking", "step": 0})
+        status({"type": "tool", "name": "score_airports", "label": "Scoring New England airports"})
+        status({"type": "tool_done", "name": "score_airports", "is_error": True, "ms": 5})
+    assert out.getvalue() == ("  -> Scoring New England airports\n"
+                              "     (that step failed; the agent will adjust)\n")
