@@ -16,6 +16,7 @@ import queue
 import threading
 import uuid
 from collections.abc import Iterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -23,15 +24,27 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from . import config
 from .agent import AgentError, AirportAgent
 from .metrics import data_vintage
 
-app = FastAPI(title="Airport Investment Intelligence Agent")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """At startup, print which API key the server will use, so a key set in the shell never silently overrides .env."""
+    used, warning = config.describe_api_key()
+    print(used, flush=True)
+    if warning:
+        print(f"WARNING: {warning}", flush=True)
+    yield
+
+
+app = FastAPI(title="Airport Investment Intelligence Agent", lifespan=_lifespan)
 WEB_DIR = Path(__file__).parent / "web"
 # JS libraries are vendored (not loaded from a CDN) so the UI works offline / behind corporate proxies.
 app.mount("/vendor", StaticFiles(directory=WEB_DIR / "vendor"), name="vendor")
 _sessions: dict[str, AirportAgent] = {}
 log = logging.getLogger(__name__)
+
 
 
 class ChatRequest(BaseModel):

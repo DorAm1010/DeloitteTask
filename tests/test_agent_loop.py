@@ -279,3 +279,15 @@ def test_stream_reports_errors_as_an_event_and_keeps_the_session():
     events = _parse_sse(server._stream_events(AirportAgent(client=_FailingClient([], exc)), "hi", "s2"))
     kind, data = events[-1]
     assert kind == "error" and data["status"] == 402 and data["session_id"] == "s2"
+
+
+def test_api_key_source_is_reported_without_leaking_the_key():
+    from airport_agent.config import describe_api_key
+    used, warning = describe_api_key("sk-ant-shell-1234abcd", None)
+    assert "shell" in used and "abcd" in used and "sk-ant" not in used and warning is None
+    used, warning = describe_api_key("sk-ant-shell-1234abcd", "sk-ant-file-9999wxyz")
+    assert "shell" in used and "unset ANTHROPIC_API_KEY" in warning and "wxyz" not in warning
+    used, warning = describe_api_key(None, "sk-ant-file-9999wxyz")
+    assert ".env" in used and "wxyz" in used and warning is None
+    used, warning = describe_api_key(None, None)
+    assert "not set" in used and "ant auth login" in warning

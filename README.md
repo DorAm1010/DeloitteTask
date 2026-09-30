@@ -103,7 +103,7 @@ so they only need to be right relative to each other.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | (required) | Claude API key |
+| `ANTHROPIC_API_KEY` | (required) | Claude API key. A variable already set in your shell overrides `.env`; the server and CLI print which one is used (last 4 characters only) at startup. |
 | `ANTHROPIC_MODEL` | `claude-opus-5` | Model used by the agent |
 | `AGENT_EFFORT` | `high` | Reasoning effort (`low`/`medium` = faster, cheaper) |
 | `AGENT_MAX_STEPS` | `10` | Maximum tool-call rounds per question |

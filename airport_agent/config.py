@@ -11,13 +11,34 @@ import os
 from pathlib import Path
 
 import yaml
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = ROOT / ".env"
+# Remember where the API key comes from before loading .env, so we can tell the user which one is used.
+_SHELL_KEY = os.environ.get("ANTHROPIC_API_KEY") or None
+_FILE_KEY = (dotenv_values(ENV_FILE).get("ANTHROPIC_API_KEY") or None) if ENV_FILE.exists() else None
 # Load the repo's own .env (not whichever one is found from the current directory).
-# Real environment variables still win over the file.
+# Real environment variables still win over the file (the standard convention).
 load_dotenv(ENV_FILE)
+
+
+def _mask(key: str) -> str:
+    return f"...{key[-4:]}" if len(key) >= 8 else "(too short to be a real key)"
+
+
+def describe_api_key(shell_key: str | None = _SHELL_KEY, file_key: str | None = _FILE_KEY) -> tuple[str, str | None]:
+    """(which key is used, warning or None). Never reveals more than the last 4 characters."""
+    if shell_key:
+        used = f"Anthropic API key: from your shell environment ({_mask(shell_key)})"
+        if file_key and file_key != shell_key:
+            return used, ("ANTHROPIC_API_KEY is set in your shell AND in .env with a different value; the shell one "
+                          "is used. Run `unset ANTHROPIC_API_KEY` (and remove it from your shell profile) to use .env.")
+        return used, None
+    if file_key:
+        return f"Anthropic API key: from {ENV_FILE} ({_mask(file_key)})", None
+    return ("Anthropic API key: not set", "No ANTHROPIC_API_KEY in your shell or in .env. The SDK may still use "
+            "ANTHROPIC_AUTH_TOKEN or an `ant auth login` profile; otherwise requests will fail.")
 DATA_DIR = ROOT / "data"
 RAW_DIR = DATA_DIR / "raw"            # large downloads, git-ignored
 PROCESSED_DIR = DATA_DIR / "processed"  # small aggregated tables, committed

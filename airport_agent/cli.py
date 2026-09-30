@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 
+from . import config
 from .agent import AgentError, AirportAgent
 
 
@@ -70,6 +71,10 @@ class LiveStatus:
 def main() -> None:
     trace = "--trace" in sys.argv
     agent = AirportAgent()
+    used, warning = config.describe_api_key()
+    print(used)
+    if warning:
+        print(f"warning: {warning}")
     print("Airport Investment Agent - ask a question, 'reset' to start over, 'quit' to exit.\n")
     while True:
         try:
