@@ -36,3 +36,8 @@ def test_unmet_demand_seat_gap_math():
     assert abs(d["estimated_seat_gap_annual"] - expected) <= 1
     low, high = d["seat_gap_range"]["annual_seats"]
     assert low <= d["estimated_seat_gap_annual"] <= high
+
+
+def test_score_echoes_request_so_answers_can_cite_it():
+    d = json.loads(run_tool("score_airports", {"region": "new england", "weights": {"scale": 0.4}})[0])
+    assert d["request"] == {"region": "new england", "min_passengers": 100_000, "weights_requested": {"scale": 0.4}}

@@ -38,3 +38,8 @@ def test_grade_checks_tools_args_mentions_and_caveats():
     assert not bad.checks["calls find_airports|get_methodology"]
     assert not bad.checks["mentions /cargo/"]
     assert not bad.checks["has caveats section"]
+
+
+def test_grounding_reads_numbers_in_dict_keys():
+    out = [json.dumps({"passenger_distance_bands": {"medium (500-1,499 mi)": 0.0008}})]
+    assert grounding("Medium routes are 500 to 1,499 miles.", out) == (1.0, [])

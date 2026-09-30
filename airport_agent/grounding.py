@@ -53,7 +53,8 @@ def _walk(obj, found: set[float]) -> None:
     if isinstance(obj, (int, float)):
         found.add(float(obj))
     elif isinstance(obj, dict):
-        for v in obj.values():
+        for k, v in obj.items():  # keys can carry numbers too, e.g. "medium (500-1,499 mi)"
+            _walk(k, found)
             _walk(v, found)
     elif isinstance(obj, list):
         for v in obj:

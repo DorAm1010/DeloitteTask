@@ -24,6 +24,9 @@ def _score(iatas: list[str] | None = None, region: str | None = None, profile: s
         found = analysis.find_airports(region=region, min_passengers=min_passengers, limit=50)
         iatas = [a["iata"] for a in found["airports"]]
     out = score_airports(iatas, profile=profile, weight_overrides=weights)
+    # Echo the request so the answer can cite it (filters and raw weights, before renormalisation).
+    out["request"] = {"region": region, "min_passengers": min_passengers if region else None,
+                      "weights_requested": weights}
     out["data_vintage"] = data_vintage()
     return out
 
