@@ -41,3 +41,12 @@ def test_unmet_demand_seat_gap_math():
 def test_score_echoes_request_so_answers_can_cite_it():
     d = json.loads(run_tool("score_airports", {"region": "new england", "weights": {"scale": 0.4}})[0])
     assert d["request"] == {"region": "new england", "min_passengers": 100_000, "weights_requested": {"scale": 0.4}}
+
+
+def test_describe_call_labels_are_plain_english():
+    from airport_agent.tools import describe_call
+    assert describe_call("score_airports", {"region": "new england", "profile": "terminal_expansion"}) == \
+        "Scoring New England airports (terminal expansion)"
+    assert describe_call("score_airports", {"iatas": ["lax", "sna"], "profile": "congestion",
+                                            "weights": {"scale": 0.4}}) == "Scoring LAX, SNA (congestion) with custom weights"
+    assert describe_call("unknown_tool", {}) == "Running unknown_tool"

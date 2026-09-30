@@ -218,3 +218,22 @@ def test_retry_after_api_error_refers_to_the_failed_question():
     sent = agent.client.requests[0]["messages"][0]["content"]
     assert "How often is BOS delayed?" in sent and sent.endswith("try now")
     assert agent.failed_question is None         # cleared after success
+
+
+def test_progress_events_follow_the_loop():
+    client = FakeClient([
+        NS(stop_reason="tool_use", content=[tool_use("t1", "estimate_unmet_demand", {"iata": "sfo"})]),
+        NS(stop_reason="end_turn", content=[text("done")]),
+    ])
+    events = []
+    AirportAgent(client=client).ask("Unmet demand at SFO?", on_progress=events.append)
+    assert [e["type"] for e in events] == ["thinking", "tool", "tool_done", "thinking"]
+    assert events[1]["label"] == "Estimating unmet demand at SFO"
+    assert events[2]["is_error"] is False
+
+
+def test_broken_progress_listener_does_not_break_the_answer():
+    def boom(_event):
+        raise RuntimeError("listener crashed")
+    client = FakeClient([NS(stop_reason="end_turn", content=[text("fine")])])
+    assert AirportAgent(client=client).ask("hi", on_progress=boom).text == "fine"

@@ -192,3 +192,33 @@ def run_tool(name: str, args: dict) -> tuple[str, bool]:
         return json.dumps(handler(**args), default=str), False
     except (ValueError, TypeError, KeyError) as exc:
         return json.dumps({"error": str(exc)}), True
+
+
+def _codes(codes) -> str:
+    codes = [str(c).upper() for c in codes or []]
+    return ", ".join(codes[:5]) + (f" and {len(codes) - 5} more" if len(codes) > 5 else "")
+
+
+def describe_call(name: str, args: dict) -> str:
+    """A short, plain-English label for a tool call, shown to the user while it runs."""
+    iata = str(args.get("iata", "")).upper()
+    if name == "find_airports":
+        what = args.get("query") or args.get("region") or args.get("state") or "the request"
+        return f"Looking up airports matching '{what}'"
+    if name == "get_airport_profile":
+        return f"Loading the demand and congestion profile for {iata}"
+    if name == "score_airports":
+        target = f"{str(args['region']).title()} airports" if args.get("region") else _codes(args.get("iatas"))
+        extra = " with custom weights" if args.get("weights") else ""
+        return f"Scoring {target} ({str(args.get('profile', '')).replace('_', ' ')}){extra}"
+    if name == "get_route_mix":
+        return f"Measuring the route-distance mix at {iata}"
+    if name == "estimate_unmet_demand":
+        return f"Estimating unmet demand at {iata}"
+    if name == "get_live_faa_status":
+        return f"Checking live FAA status{' for ' + _codes(args['iatas']) if args.get('iatas') else ''}"
+    if name == "get_methodology":
+        return "Reading the scoring methodology"
+    if name == "show_chart":
+        return f"Preparing a {str(args.get('chart', '')).replace('_', ' ')} chart"
+    return f"Running {name}"
