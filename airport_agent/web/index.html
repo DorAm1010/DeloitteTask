@@ -57,7 +57,16 @@
   button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
   button.recording { background: #c0392b; }
   .toolbar { display: flex; gap: 12px; align-items: center; margin-top: 8px; font-size: 13px; color: var(--muted); }
-  .thinking { color: var(--muted); font-style: italic; }
+  .thinking { color: var(--muted); }
+  .progress .step { font-size: 14px; margin: 2px 0; }
+  .progress .step.done { color: var(--muted); }
+  .progress .step.failed { color: #c0392b; }
+  .progress .now { display: flex; align-items: center; gap: 8px; font-style: italic; }
+  .progress .elapsed { font-style: normal; font-size: 12px; }
+  .spinner { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent);
+             border-radius: 50%; animation: spin 0.8s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
   @media (max-width: 600px) { .user { margin-left: 0; } main { padding: 12px 16px; } }
 </style>
 </head>
@@ -183,25 +192,77 @@ function speak(text) {
   speechSynthesis.speak(new SpeechSynthesisUtterance(plain));
 }
 
+// Live progress while the agent works: finished steps, then the current step with a spinner and a timer.
+function progressView(el) {
+  const started = Date.now();
+  const steps = [];
+  let now = "Thinking";
+  const render = () => {
+    const secs = Math.round((Date.now() - started) / 1000);
+    el.innerHTML = `<div class="progress">${steps.map(s =>
+        `<div class="step ${s.state}">${s.state === "failed" ? "&#10007;" : "&#10003;"} ${esc(s.label)}</div>`).join("")}
+      <div class="now"><span class="spinner"></span>${esc(now)}... <span class="elapsed">${secs}s</span></div></div>`;
+  };
+  const timer = setInterval(render, 1000);
+  render();
+  return {
+    update(e) {
+      if (e.type === "thinking") now = e.step === 0 ? "Thinking" : "Reviewing the results";
+      else if (e.type === "tool") { steps.push({label: e.label, state: "running"}); now = e.label; }
+      else if (e.type === "tool_done") {
+        const s = steps.findLast(x => x.state === "running");
+        if (s) s.state = e.is_error ? "failed" : "done";
+      }
+      render(); scrollDown();
+    },
+    stop() { clearInterval(timer); },
+  };
+}
+
+// Reads the server-sent events from /api/chat/stream; resolves with the "answer" payload.
+async function streamChat(text, onProgress) {
+  const res = await fetch("/api/chat/stream", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({message: text, session_id: sessionId}),
+  });
+  if (!res.ok) {
+    // Prefer the server's JSON message; fall back to plain text (e.g. a proxy error page).
+    const body = await res.text();
+    let detail = body;
+    try { detail = JSON.parse(body).detail || body; } catch (_) {}
+    throw new Error(detail || res.statusText);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const {value, done} = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, {stream: true});
+    let cut;
+    while ((cut = buffer.indexOf("\n\n")) >= 0) {
+      const raw = buffer.slice(0, cut);
+      buffer = buffer.slice(cut + 2);
+      const event = (raw.match(/^event: (.*)$/m) || [])[1];
+      const data = JSON.parse((raw.match(/^data: (.*)$/m) || [])[1] || "{}");
+      if (data.session_id) sessionId = data.session_id;  // keep the conversation, even after an error
+      if (event === "progress") onProgress(data);
+      else if (event === "answer") return data;
+      else if (event === "error") throw new Error(data.message);
+    }
+  }
+  throw new Error("The connection closed before the answer arrived. Try again.");
+}
+
 async function send(text) {
   if (!text.trim()) return;
   addMessage("user", esc(text));
   input.value = "";
-  const pending = addMessage("bot thinking", "Analyzing... (querying data and scoring airports)");
+  const pending = addMessage("bot thinking", "");
+  const progress = progressView(pending);
   try {
-    const res = await fetch("/api/chat", {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({message: text, session_id: sessionId}),
-    });
-    if (!res.ok) {
-      // Prefer the server's JSON message; fall back to plain text (e.g. a proxy error page).
-      const body = await res.text();
-      let detail = body;
-      try { detail = JSON.parse(body).detail || body; } catch (_) {}
-      throw new Error(detail || res.statusText);
-    }
-    const data = await res.json();
-    sessionId = data.session_id;
+    const data = await streamChat(text, e => progress.update(e));
+    progress.stop();
     pending.className = "msg bot";
     const charts = (data.charts || []).map(spec => ({spec, ...chartHtml(spec)}));
     pending.innerHTML = DOMPurify.sanitize(marked.parse(data.answer)) + charts.map(c => c.html).join("") +
@@ -209,6 +270,7 @@ async function send(text) {
     charts.forEach(c => drawChart(c.id, c.spec));
     speak(data.answer);
   } catch (err) {
+    progress.stop();
     pending.className = "msg bot";
     pending.textContent = "Error: " + err.message;
   }
