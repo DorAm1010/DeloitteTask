@@ -128,7 +128,8 @@ repeat. Otherwise return the text. The full history is kept, which is what makes
 
 **Guardrails**
 - The system prompt requires every number to come from a tool result, rankings to come from `score_airports`,
-  and an "Assumptions & caveats" section in every answer.
+  and an "Assumptions & caveats" section at the end of answers that present data or draw an inference (only
+  when it is needed to read the answer correctly).
 - Tool errors go back to the model as `is_error` results (e.g. an unknown airport code), so it can self-correct
   instead of crashing.
 - A step limit (10) forces a final answer with `tool_choice: none`.
