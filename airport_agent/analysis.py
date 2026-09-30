@@ -192,6 +192,9 @@ def unmet_demand(iata: str, target_load_factor: float = config.TARGET_LOAD_FACTO
     lf = row["load_factor"]
     seats_needed = pax / target_load_factor
     seat_gap = max(0.0, seats_needed - seats)
+    # A stricter comfort level (higher target) means a smaller gap, so the high target gives the low end.
+    hi_target, lo_target = max(config.TARGET_LOAD_FACTOR_RANGE), min(config.TARGET_LOAD_FACTOR_RANGE)
+    gap_range = [max(0.0, pax / t - seats) for t in (hi_target, lo_target)]
     peak = a.sort_values("month").tail(12).assign(lf=lambda d: d["passengers"] / d["seats"].replace(0, np.nan))
     peak_row = peak.loc[peak["lf"].idxmax()] if len(peak) and peak["lf"].notna().any() else None
 
@@ -244,6 +247,11 @@ def unmet_demand(iata: str, target_load_factor: float = config.TARGET_LOAD_FACTO
         "estimated_seat_gap_annual": int(round(seat_gap)),
         "estimated_seat_gap_per_day": int(round(seat_gap / 365)),
         "seat_gap_pct_of_current_seats": _clean(seat_gap / seats if seats else np.nan),
+        "seat_gap_range": {
+            "target_load_factor": [hi_target, lo_target],
+            "annual_seats": [int(round(g)) for g in gap_range],
+            "pct_of_current_seats": [_clean(g / seats if seats else np.nan) for g in gap_range],
+        },
         "peak_month": None if peak_row is None else {"month": peak_row["month"], "load_factor": _clean(peak_row["lf"])},
         "signals": signals,
         "findings": findings,

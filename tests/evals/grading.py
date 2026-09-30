@@ -6,6 +6,7 @@ Checks per case:
   * expected tools  the right tools were called, optionally with specific arguments
   * forbidden tools tools that must NOT be called (e.g. for out-of-scope questions)
   * must mention    regexes the answer must match (key facts, airport codes)
+  * must not mention regexes the answer must NOT match (e.g. a buy/sell call)
   * caveats         the answer has an assumptions/caveats section
 """
 from __future__ import annotations
@@ -60,6 +61,8 @@ def grade(case: dict, answer: str, calls: list[dict]) -> Grade:
         g.checks[f"does not call {name}"] = ok
     for pattern in case.get("must_mention", []):
         g.checks[f"mentions /{pattern}/"] = bool(re.search(pattern, answer, re.IGNORECASE))
+    for pattern in case.get("must_not_mention", []):
+        g.checks[f"does not mention /{pattern}/"] = not re.search(pattern, answer, re.IGNORECASE)
     if case.get("require_caveats", True):
         g.checks["has caveats section"] = bool(re.search(r"assumption|caveat", answer, re.IGNORECASE))
 

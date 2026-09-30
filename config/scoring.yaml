@@ -19,6 +19,8 @@ assumptions:
   passenger_route_min_pax_per_dep: 20
   # Load factor considered comfortably served; above it demand starts to spill.
   target_load_factor: 0.80
+  # The comfort level is a judgement call, so the seat gap is also reported across this range.
+  target_load_factor_range: [0.78, 0.82]
   # Percentile reference universe: airports with at least this many enplaned
   # passengers in the last 12 months (roughly FAA small hub and up).
   scoring_universe_min_pax: 500000

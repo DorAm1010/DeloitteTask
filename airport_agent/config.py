@@ -63,5 +63,6 @@ LONG_HAUL_MILES: int = _assumptions["long_haul_miles"]
 DISTANCE_BANDS: list[tuple[float, float, str]] = [tuple(b) for b in _assumptions["distance_bands"]]
 PASSENGER_ROUTE_MIN_PAX_PER_DEP: float = _assumptions["passenger_route_min_pax_per_dep"]
 TARGET_LOAD_FACTOR: float = _assumptions["target_load_factor"]
+TARGET_LOAD_FACTOR_RANGE: tuple[float, float] = tuple(_assumptions["target_load_factor_range"])
 SCORING_UNIVERSE_MIN_PAX: int = _assumptions["scoring_universe_min_pax"]
 REGIONS: dict[str, list[str]] = SCORING_CONFIG["regions"]

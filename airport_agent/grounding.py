@@ -5,7 +5,8 @@ Deterministic and free (no model call). Used in two places:
   * in the eval set (tests/evals/grading.py) - the hallucination-rate check
 
 A number counts as grounded if it matches a tool-output number within its
-displayed rounding (82.6% matches 0.8255; 1.0M matches 1,029,860). Years and
+displayed rounding (82.6% matches 0.8255; 1.0M matches 1,029,860; "~1,500"
+matches 1,519 because a leading "~"/"about" marks the trailing zeros as rounding). Years and
 small integers (<= 10) are skipped as not data. Numbers the model derived
 itself (e.g. doubling a figure) show up as ungrounded - intentionally, since
 the system prompt says numbers must come from tools.
@@ -18,8 +19,10 @@ from dataclasses import dataclass
 
 # A number with optional thousands separators, decimals, and a unit suffix.
 NUMBER_RE = re.compile(
-    r"(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?\s*(%|k\b|K\b|M\b|million\b|bn\b|B\b|billion\b)?")
-SUFFIX = {"k": 1e3, "K": 1e3, "M": 1e6, "million": 1e6, "bn": 1e9, "B": 1e9, "billion": 1e9}
+    r"(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?\s*(%|k\b|K\b|m\b|M\b|million\b|bn\b|B\b|billion\b)?")
+SUFFIX = {"k": 1e3, "K": 1e3, "m": 1e6, "M": 1e6, "million": 1e6, "bn": 1e9, "B": 1e9, "billion": 1e9}
+# "~1,500" or "about 1,500" is a rounded figure: its trailing zeros are not precision.
+APPROX_RE = re.compile(r"(?:~|≈|\babout|\baround|\broughly|\bapproximately|\bnearly)\s*$", re.IGNORECASE)
 
 
 @dataclass
@@ -42,6 +45,9 @@ def extract_answer_numbers(text: str) -> list[AnswerNumber]:
             continue
         scale = SUFFIX.get(suffix, 1.0)
         decimals = len(frac) - 1 if frac else 0
+        if not frac and APPROX_RE.search(text[max(0, m.start() - 15):m.start()]):
+            digits = whole.replace(",", "")
+            decimals = -(len(digits) - len(digits.rstrip("0")))
         tolerance = 0.5 * 10 ** (-decimals) * scale
         out.append(AnswerNumber(m.group(0).strip(), value * scale, tolerance))
     return out
@@ -53,7 +59,8 @@ def _walk(obj, found: set[float]) -> None:
     if isinstance(obj, (int, float)):
         found.add(float(obj))
     elif isinstance(obj, dict):
-        for v in obj.values():
+        for k, v in obj.items():  # keys can carry numbers too, e.g. "medium (500-1,499 mi)"
+            _walk(k, found)
             _walk(v, found)
     elif isinstance(obj, list):
         for v in obj:

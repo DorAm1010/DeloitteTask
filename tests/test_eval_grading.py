@@ -38,3 +38,20 @@ def test_grade_checks_tools_args_mentions_and_caveats():
     assert not bad.checks["calls find_airports|get_methodology"]
     assert not bad.checks["mentions /cargo/"]
     assert not bad.checks["has caveats section"]
+
+
+def test_grounding_reads_numbers_in_dict_keys():
+    out = [json.dumps({"passenger_distance_bands": {"medium (500-1,499 mi)": 0.0008}})]
+    assert grounding("Medium routes are 500 to 1,499 miles.", out) == (1.0, [])
+
+
+def test_grounding_handles_lowercase_millions_and_approximate_round_numbers():
+    out = [json.dumps({"pax_added": -1240000, "seat_gap_per_day": 1519})]
+    assert grounding("Passengers fell 1.24m; the gap is ~1,500 seats a day.", out) == (1.0, [])
+    assert grounding("The gap is 1,500 seats a day.", out)[1] == ["1,500"]  # no "~": exact precision
+
+
+def test_grade_must_not_mention():
+    case = {"id": "x", "must_not_mention": ["you should buy"], "require_caveats": False, "min_grounding": None}
+    assert not grade(case, "Yes, you should buy them.", []).passed
+    assert grade(case, "I can't tell you that.", []).passed
