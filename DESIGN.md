@@ -154,6 +154,13 @@ chart is guided by the tool description and one rule in the system prompt: at mo
 answers, and no table repeating the chart. Evals check both directions (a chart when asked, none for a simple
 fact).
 
+**Memory and tokens (cost).** Memory is the conversation itself: each session keeps its message history
+(questions, tool results, answers) in memory and resends it on every call, which is what makes follow-ups work;
+nothing persists across sessions. History is therefore the main cost driver, so the stable prefix (tools, system
+prompt, earlier turns) is prompt-cached and billed at about 10% on repeat calls, the data layer is cached in
+process, and cost per answer is shown and logged. History isn't trimmed yet; the next step is dropping old tool
+outputs or server-side compaction, plus a per-session budget.
+
 **Configuration as data.** The system prompt lives in `prompts/system.md`, and every analyst judgement
 (thresholds, regions, scoring components, weights and rationales) lives in `config/scoring.yaml`. Both can be
 reviewed and diffed like code, and changed without touching Python. A client-specific investment thesis is just
