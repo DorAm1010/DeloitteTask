@@ -249,3 +249,33 @@ def test_cli_live_status_prints_steps_when_piped():
         status({"type": "tool_done", "name": "score_airports", "is_error": True, "ms": 5})
     assert out.getvalue() == ("  -> Scoring New England airports\n"
                               "     (that step failed; the agent will adjust)\n")
+
+
+def _parse_sse(chunks):
+    import json
+    out = []
+    for chunk in chunks:
+        event, data = chunk.strip().split("\n")
+        out.append((event.removeprefix("event: "), json.loads(data.removeprefix("data: "))))
+    return out
+
+
+def test_stream_sends_progress_then_answer():
+    from airport_agent import server
+    client = FakeClient([
+        NS(stop_reason="tool_use", content=[tool_use("t1", "get_methodology", {})]),
+        NS(stop_reason="end_turn", content=[text("Percentiles vs a national universe.")]),
+    ])
+    events = _parse_sse(server._stream_events(AirportAgent(client=client), "How does scoring work?", "s1"))
+    assert [e for e, _ in events] == ["progress", "progress", "progress", "progress", "answer"]
+    assert events[1][1]["label"] == "Reading the scoring methodology"
+    assert events[-1][1]["answer"] == "Percentiles vs a national universe." and events[-1][1]["session_id"] == "s1"
+
+
+def test_stream_reports_errors_as_an_event_and_keeps_the_session():
+    import anthropic
+    from airport_agent import server
+    exc = _api_error(anthropic.BadRequestError, 400, "Your credit balance is too low to access the Anthropic API.")
+    events = _parse_sse(server._stream_events(AirportAgent(client=_FailingClient([], exc)), "hi", "s2"))
+    kind, data = events[-1]
+    assert kind == "error" and data["status"] == 402 and data["session_id"] == "s2"
