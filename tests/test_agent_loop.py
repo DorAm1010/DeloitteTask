@@ -200,3 +200,21 @@ def test_broken_credentials_profile_gives_same_message(monkeypatch):
     with pytest.raises(AgentError) as info:
         AirportAgent().ask("hi")
     assert info.value.status == 401 and "ANTHROPIC_API_KEY" in info.value.message
+
+
+def test_retry_after_api_error_refers_to_the_failed_question():
+    import anthropic
+    import pytest
+    import httpx2
+    from airport_agent.agent import AgentError
+    conn = anthropic.APIConnectionError(request=httpx2.Request("POST", "https://x"))
+    agent = AirportAgent(client=_FailingClient([], conn))
+    with pytest.raises(AgentError):
+        agent.ask("How often is BOS delayed?")
+    with pytest.raises(AgentError):
+        agent.ask("try now")                     # still failing: keep the ORIGINAL question
+    agent.client = FakeClient([NS(stop_reason="end_turn", content=[text("BOS answer")])])
+    agent.ask("try now")
+    sent = agent.client.requests[0]["messages"][0]["content"]
+    assert "How often is BOS delayed?" in sent and sent.endswith("try now")
+    assert agent.failed_question is None         # cleared after success

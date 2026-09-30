@@ -86,9 +86,11 @@ class AirportAgent:
         self.model = model
         self.messages: list[dict] = []
         self.session_id = str(uuid.uuid4())
+        self.failed_question: str | None = None  # last question lost to an API error
 
     def reset(self) -> None:
         self.messages = []
+        self.failed_question = None
 
     def _call_model(self, **extra):
         if self.client is None:
@@ -113,18 +115,27 @@ class AirportAgent:
     def ask(self, question: str) -> AgentReply:
         """Answer one question. On an API failure, raises AgentError and leaves the history unchanged."""
         checkpoint = len(self.messages)
+        original = question
+        if self.failed_question:
+            # The failed turn was rolled back, so tell the model about it: "try again" then means that question.
+            question = (f'(My previous message failed because of an API error and got no answer: '
+                        f'"{self.failed_question}")\n\n{question}')
         try:
-            return self._ask(question)
+            reply = self._ask(question)
+            self.failed_question = None
+            return reply
         except TypeError as exc:
             # The SDK raises TypeError (not an API error) at request time when it finds no credentials.
             if "authentication method" not in str(exc):
                 raise
             del self.messages[checkpoint:]
+            self.failed_question = self.failed_question or original
             raise _missing_key_error() from exc
         except anthropic.AnthropicError as exc:
             # Roll back the half-finished turn, so a dangling tool_use can't break the next request
             # and the failed question doesn't get merged into the next one.
             del self.messages[checkpoint:]
+            self.failed_question = self.failed_question or original
             err = describe_api_error(exc)
             log_event("error", session=self.session_id, model=self.model, question=question,
                       status=err.status, error=err.message)
